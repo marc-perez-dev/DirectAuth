@@ -5,6 +5,7 @@ import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.context.CommandContext;
 import com.marcp.directauth.DirectAuth;
 import com.marcp.directauth.auth.LoginManager;
+import com.marcp.directauth.events.PlayerRestrictionHandler;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.network.chat.Component;
@@ -58,7 +59,7 @@ public class RegisterCommand {
         // Restaurar posición original si existe (por si se movió al spawn al entrar)
         DirectAuth.getPositionManager().restorePosition(player);
         // Liberar ancla de restricción
-        com.marcp.DirectAuth.events.PlayerRestrictionHandler.removeAnchor(player);
+        PlayerRestrictionHandler.removeAnchor(player);
         
         player.sendSystemMessage(Component.literal(DirectAuth.getConfig().msgRegistered));
         player.sendSystemMessage(Component.literal(DirectAuth.getConfig().msgPremiumEnableHint));

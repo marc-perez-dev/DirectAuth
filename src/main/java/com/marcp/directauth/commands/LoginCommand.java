@@ -6,6 +6,7 @@ import com.mojang.brigadier.context.CommandContext;
 import com.marcp.directauth.DirectAuth;
 import com.marcp.directauth.auth.LoginManager;
 import com.marcp.directauth.data.UserData;
+import com.marcp.directauth.events.PlayerRestrictionHandler;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.network.chat.Component;
@@ -64,7 +65,7 @@ public class LoginCommand {
             // Restaurar posición original si existe
             DirectAuth.getPositionManager().restorePosition(player);
             // Liberar ancla de restricción
-            com.marcp.DirectAuth.events.PlayerRestrictionHandler.removeAnchor(player);
+            PlayerRestrictionHandler.removeAnchor(player);
             
             player.sendSystemMessage(Component.literal(DirectAuth.getConfig().msgAuthenticated));
             return 1;

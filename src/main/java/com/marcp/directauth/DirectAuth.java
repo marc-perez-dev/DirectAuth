@@ -4,7 +4,9 @@ import com.marcp.directauth.auth.LoginManager;
 import com.marcp.directauth.commands.LoginCommand;
 import com.marcp.directauth.commands.PremiumCommand;
 import com.marcp.directauth.commands.RegisterCommand;
+import com.marcp.directauth.config.ModConfig;
 import com.marcp.directauth.data.DatabaseManager;
+import com.marcp.directauth.data.PositionManager;
 import com.marcp.directauth.events.ConnectionHandler;
 import com.marcp.directauth.events.PlayerRestrictionHandler;
 import net.neoforged.bus.api.IEventBus;
@@ -14,12 +16,13 @@ import net.neoforged.neoforge.event.RegisterCommandsEvent;
 
 import java.nio.file.Path;
 
-@Mod("DirectAuth")
+@Mod(DirectAuth.MODID)
 public class DirectAuth {
+    public static final String MODID = "directauth";
     private static DatabaseManager database;
-    private static com.marcp.DirectAuth.data.PositionManager positionManager;
+    private static PositionManager positionManager;
     private static LoginManager loginManager;
-    private static com.marcp.DirectAuth.config.ModConfig config;
+    private static ModConfig config;
     
     public DirectAuth(IEventBus modEventBus) {
         loginManager = new LoginManager();
@@ -43,18 +46,18 @@ public class DirectAuth {
     
     public static void initDatabase(Path worldPath) {
         database = new DatabaseManager(worldPath);
-        positionManager = new com.marcp.DirectAuth.data.PositionManager(worldPath);
+        positionManager = new PositionManager(worldPath);
     }
     
     public static void initConfig(Path configPath) {
-        config = com.marcp.DirectAuth.config.ModConfig.load(configPath);
+        config = ModConfig.load(configPath);
     }
     
     public static DatabaseManager getDatabase() {
         return database;
     }
     
-    public static com.marcp.DirectAuth.data.PositionManager getPositionManager() {
+    public static PositionManager getPositionManager() {
         return positionManager;
     }
     
@@ -62,7 +65,7 @@ public class DirectAuth {
         return loginManager;
     }
     
-    public static com.marcp.DirectAuth.config.ModConfig getConfig() {
+    public static ModConfig getConfig() {
         return config;
     }
 }
