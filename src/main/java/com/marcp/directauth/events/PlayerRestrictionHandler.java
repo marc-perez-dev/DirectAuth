@@ -15,8 +15,10 @@ import net.neoforged.neoforge.event.entity.player.ItemEntityPickupEvent;
 import net.neoforged.neoforge.event.entity.player.PlayerInteractEvent;
 import net.neoforged.neoforge.event.entity.player.PlayerXpEvent;
 import net.neoforged.neoforge.event.level.BlockEvent;
+import net.neoforged.neoforge.event.CommandEvent;
 import net.neoforged.neoforge.event.ServerChatEvent;
 import net.neoforged.neoforge.event.tick.EntityTickEvent;
+
 
 import java.util.Map;
 import java.util.UUID;
@@ -150,6 +152,8 @@ public class PlayerRestrictionHandler {
         }
     }
     
+
+    
     @SubscribeEvent
     public void onXpPickup(PlayerXpEvent.PickupXp event) {
         if (isNotAuth(event.getEntity())) {
@@ -181,6 +185,24 @@ public class PlayerRestrictionHandler {
             if (!msg.startsWith("/register") && !msg.startsWith("/login") && !msg.startsWith("/premium")) {
                 event.setCanceled(true);
                 event.getPlayer().sendSystemMessage(Component.literal(DirectAuth.getConfig().msgUseCommands));
+            }
+        }
+    }
+
+    @SubscribeEvent
+    public void onCommand(CommandEvent event) {
+        if (event.getParseResults().getContext().getSource().getEntity() instanceof ServerPlayer player) {
+            if (isNotAuth(player)) {
+                String input = event.getParseResults().getReader().getString();
+                String[] parts = input.trim().split(" ");
+                String cmd = parts.length > 0 ? parts[0] : "";
+                
+                if (!cmd.equalsIgnoreCase("register") && 
+                    !cmd.equalsIgnoreCase("login") && 
+                    !cmd.equalsIgnoreCase("premium")) {
+                    event.setCanceled(true);
+                    player.sendSystemMessage(Component.literal(DirectAuth.getConfig().msgUseCommands));
+                }
             }
         }
     }
