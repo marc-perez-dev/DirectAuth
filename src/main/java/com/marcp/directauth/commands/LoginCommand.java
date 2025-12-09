@@ -24,7 +24,7 @@ public class LoginCommand {
     
     private static int execute(CommandContext<CommandSourceStack> context) {
         if (!(context.getSource().getEntity() instanceof ServerPlayer player)) {
-            context.getSource().sendFailure(Component.literal(DirectAuth.getConfig().errNotPlayer));
+            context.getSource().sendFailure(Component.literal(DirectAuth.getConfig().getLang().errNotPlayer));
             return 0;
         }
         
@@ -33,25 +33,25 @@ public class LoginCommand {
         
         // Verificar si está registrado
         if (userData == null) {
-            player.sendSystemMessage(Component.literal(DirectAuth.getConfig().errNotRegistered));
+            player.sendSystemMessage(Component.literal(DirectAuth.getConfig().getLang().errNotRegistered));
             return 0;
         }
         
         // Verificar si ya está autenticado
         if (DirectAuth.getLoginManager().isAuthenticated(player)) {
-            player.sendSystemMessage(Component.literal(DirectAuth.getConfig().errAlreadyAuthenticated));
+            player.sendSystemMessage(Component.literal(DirectAuth.getConfig().getLang().errAlreadyAuthenticated));
             return 0;
         }
         
         // Verificar cooldown
         if (!DirectAuth.getLoginManager().canAttemptLogin(player)) {
-            player.sendSystemMessage(Component.literal(DirectAuth.getConfig().errCooldown));
+            player.sendSystemMessage(Component.literal(DirectAuth.getConfig().getLang().errCooldown));
             return 0;
         }
         
         // Verificar si excedió intentos
         if (DirectAuth.getLoginManager().hasExceededMaxAttempts(player)) {
-            player.connection.disconnect(Component.literal(DirectAuth.getConfig().errMaxAttempts));
+            player.connection.disconnect(Component.literal(DirectAuth.getConfig().getLang().errMaxAttempts));
             return 0;
         }
         
@@ -67,12 +67,12 @@ public class LoginCommand {
             // Liberar ancla de restricción
             PlayerRestrictionHandler.removeAnchor(player);
             
-            player.sendSystemMessage(Component.literal(DirectAuth.getConfig().msgAuthenticated));
+            player.sendSystemMessage(Component.literal(DirectAuth.getConfig().getLang().msgAuthenticated));
             return 1;
         } else {
             DirectAuth.getLoginManager().recordLoginAttempt(player, false);
             int attempts = DirectAuth.getLoginManager().getFailedAttempts(player);
-            player.sendSystemMessage(Component.literal(String.format(DirectAuth.getConfig().errWrongPassword, attempts, DirectAuth.getConfig().maxLoginAttempts)));
+            player.sendSystemMessage(Component.literal(String.format(DirectAuth.getConfig().getLang().errWrongPassword, attempts, DirectAuth.getConfig().maxLoginAttempts)));
             return 0;
         }
     }

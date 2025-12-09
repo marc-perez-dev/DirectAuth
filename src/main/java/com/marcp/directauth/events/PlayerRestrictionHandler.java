@@ -13,7 +13,7 @@ import net.neoforged.neoforge.event.ServerChatEvent;
 import net.neoforged.neoforge.event.entity.EntityMountEvent;
 import net.neoforged.neoforge.event.entity.item.ItemTossEvent;
 import net.neoforged.neoforge.event.entity.living.LivingDamageEvent;
-import net.neoforged.neoforge.event.entity.living.LivingHealEvent; // IMPORTANTE
+import net.neoforged.neoforge.event.entity.living.LivingHealEvent;
 import net.neoforged.neoforge.event.entity.player.AttackEntityEvent;
 import net.neoforged.neoforge.event.entity.player.ItemEntityPickupEvent;
 import net.neoforged.neoforge.event.entity.player.PlayerInteractEvent;
@@ -58,7 +58,7 @@ public class PlayerRestrictionHandler {
                 // Verificar Timeout (Kick) cada 20 ticks (1 segundo) para no saturar
                 if (player.tickCount % 20 == 0) {
                     if (DirectAuth.getLoginManager().hasTimedOut(player)) {
-                        player.connection.disconnect(Component.literal(DirectAuth.getConfig().msgTimeout));
+                        player.connection.disconnect(Component.literal(DirectAuth.getConfig().getLang().msgTimeout));
                         return; // Salimos para no ejecutar el resto de lógica
                     }
                 }
@@ -91,7 +91,7 @@ public class PlayerRestrictionHandler {
                 
                 if (player.tickCount % 100 == 0) {
                     player.displayClientMessage(
-                        Component.literal(DirectAuth.getConfig().msgAuthReminder),
+                        Component.literal(DirectAuth.getConfig().getLang().msgAuthReminder),
                         true 
                     );
                 }
@@ -137,7 +137,7 @@ public class PlayerRestrictionHandler {
                 player.getInventory().add(event.getEntity().getItem());
                 player.inventoryMenu.sendAllDataToRemote();
                 player.containerMenu.broadcastChanges();
-                player.sendSystemMessage(Component.literal(DirectAuth.getConfig().msgNoDrop));
+                player.sendSystemMessage(Component.literal(DirectAuth.getConfig().getLang().msgNoDrop));
             }
         }
     }
@@ -163,7 +163,7 @@ public class PlayerRestrictionHandler {
             String msg = event.getRawText();
             if (!msg.startsWith("/register") && !msg.startsWith("/login") && !msg.startsWith("/online")) {
                 event.setCanceled(true);
-                event.getPlayer().sendSystemMessage(Component.literal(DirectAuth.getConfig().msgUseCommands));
+                event.getPlayer().sendSystemMessage(Component.literal(DirectAuth.getConfig().getLang().msgUseCommands));
             }
         }
     }
@@ -179,7 +179,7 @@ public class PlayerRestrictionHandler {
                     !cmd.equalsIgnoreCase("login") && 
                     !cmd.equalsIgnoreCase("online")) {
                     event.setCanceled(true);
-                    player.sendSystemMessage(Component.literal(DirectAuth.getConfig().msgUseCommands));
+                    player.sendSystemMessage(Component.literal(DirectAuth.getConfig().getLang().msgUseCommands));
                 }
             }
         }

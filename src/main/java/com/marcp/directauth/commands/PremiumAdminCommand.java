@@ -32,7 +32,7 @@ public class PremiumAdminCommand {
         UserData userData = DirectAuth.getDatabase().getUser(username);
 
         if (userData == null) {
-            source.sendFailure(Component.literal(String.format(DirectAuth.getConfig().errAdminUserNotFound, username)));
+            source.sendFailure(Component.literal(String.format(DirectAuth.getConfig().getLang().errAdminUserNotFound, username)));
             return 0;
         }
 
@@ -40,7 +40,7 @@ public class PremiumAdminCommand {
         DirectAuth.getDatabase().updateUser(username, userData);
         
         source.sendSuccess(() -> Component.literal(
-            String.format(DirectAuth.getConfig().msgAdminPremiumUpdated, username, newValue)
+            String.format(DirectAuth.getConfig().getLang().msgAdminPremiumUpdated, username, newValue)
         ), true);
 
         return 1;

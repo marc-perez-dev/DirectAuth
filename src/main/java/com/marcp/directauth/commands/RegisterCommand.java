@@ -24,7 +24,7 @@ public class RegisterCommand {
     private static int execute(CommandContext<CommandSourceStack> context) {
         // En Brigadier, verificar la fuente es crucial
         if (!(context.getSource().getEntity() instanceof ServerPlayer player)) {
-            context.getSource().sendFailure(Component.literal(DirectAuth.getConfig().errNotPlayer));
+            context.getSource().sendFailure(Component.literal(DirectAuth.getConfig().getLang().errNotPlayer));
             return 0;
         }
         
@@ -32,7 +32,7 @@ public class RegisterCommand {
         
         // Verificar si ya está registrado
         if (DirectAuth.getDatabase().userExists(username)) {
-            player.sendSystemMessage(Component.literal(DirectAuth.getConfig().errAlreadyRegistered));
+            player.sendSystemMessage(Component.literal(DirectAuth.getConfig().getLang().errAlreadyRegistered));
             return 0;
         }
         
@@ -40,12 +40,12 @@ public class RegisterCommand {
         
         // Validar contraseña
         if (password.length() < DirectAuth.getConfig().minPasswordLength) {
-            player.sendSystemMessage(Component.literal(DirectAuth.getConfig().errPasswordTooShort));
+            player.sendSystemMessage(Component.literal(DirectAuth.getConfig().getLang().errPasswordTooShort));
             return 0;
         }
         
         if (password.length() > DirectAuth.getConfig().maxPasswordLength) {
-            player.sendSystemMessage(Component.literal(DirectAuth.getConfig().errPasswordTooLong));
+            player.sendSystemMessage(Component.literal(DirectAuth.getConfig().getLang().errPasswordTooLong));
             return 0;
         }
         
@@ -61,8 +61,8 @@ public class RegisterCommand {
         // Liberar ancla de restricción
         PlayerRestrictionHandler.removeAnchor(player);
         
-        player.sendSystemMessage(Component.literal(DirectAuth.getConfig().msgRegistered));
-        player.sendSystemMessage(Component.literal(DirectAuth.getConfig().msgPremiumEnableHint));
+        player.sendSystemMessage(Component.literal(DirectAuth.getConfig().getLang().msgRegistered));
+        player.sendSystemMessage(Component.literal(DirectAuth.getConfig().getLang().msgPremiumEnableHint));
         
         return 1;
     }

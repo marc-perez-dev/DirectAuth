@@ -64,10 +64,10 @@ public class ConnectionHandler {
             
             if (expectedUUID != null && expectedUUID.equals(actualUUID)) {
                 DirectAuth.getLoginManager().setAuthenticated(player, true);
-                player.sendSystemMessage(Component.literal(DirectAuth.getConfig().msgAutoLogin));
+                player.sendSystemMessage(Component.literal(DirectAuth.getConfig().getLang().msgAutoLogin));
                 isAuthenticated = true;
             } else {
-                player.connection.disconnect(Component.literal(DirectAuth.getConfig().msgPremiumError));
+                player.connection.disconnect(Component.literal(DirectAuth.getConfig().getLang().msgPremiumError));
                 return;
             }
         }
@@ -83,10 +83,10 @@ public class ConnectionHandler {
             player.teleportTo(overworld, spawnPos.getX() + 0.5, spawnPos.getY(), spawnPos.getZ() + 0.5, 0, 0);
             
             if (userData == null) {
-                player.sendSystemMessage(Component.literal(DirectAuth.getConfig().msgWelcome));
+                player.sendSystemMessage(Component.literal(DirectAuth.getConfig().getLang().msgWelcome));
             } else {
-                player.sendSystemMessage(Component.literal(DirectAuth.getConfig().msgLoginRequest));
-                player.sendSystemMessage(Component.literal(DirectAuth.getConfig().msgPremiumHint));
+                player.sendSystemMessage(Component.literal(DirectAuth.getConfig().getLang().msgLoginRequest));
+                player.sendSystemMessage(Component.literal(DirectAuth.getConfig().getLang().msgPremiumHint));
             }
         }
     }
