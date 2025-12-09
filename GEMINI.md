@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-This repository contains a Minecraft Mod built with **NeoForge** for version **1.21.1**, designed to handle player authentication (Offline/Premium modes). It also includes a documentation site powered by **Docusaurus**.
+This repository contains a Minecraft Mod built with **NeoForge** for version **1.21.1**, designed to handle player authentication (Offline/Premium modes). It also includes the full Neoforged documentation for reference in `Documentation/`.
 
 ### Key Components
 

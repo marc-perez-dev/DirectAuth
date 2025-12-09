@@ -4,7 +4,8 @@
   "compatibilityLevel": "JAVA_21",
   "refmap": "directauth.refmap.json",
   "mixins": [
-    "MixinServerLoginPacketListenerImpl"
+    "MixinServerLoginPacketListenerImpl",
+    "PlayerListAccessor"
   ],
   "injectors": {
     "defaultRequire": 1

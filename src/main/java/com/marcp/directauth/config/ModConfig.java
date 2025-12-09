@@ -42,6 +42,12 @@ public class ModConfig {
     public String msgPremiumSuccess = "§a✓ Cuenta verificada como premium";
     public String msgAutoLoginHint = "§7A partir de ahora tendrás auto-login";
 
+    // --- Mensajes de Premium (Warning/Admin) ---
+    public String msgPremiumWarning = "§c¡ADVERTENCIA! §7Estás a punto de activar el modo premium.\n§7Si no tienes Minecraft original, §cperderás el acceso a tu cuenta.\n§7Escribe §b/premium <tu_contraseña> §7para confirmar.";
+    public String msgAdminPremiumUpdated = "§aEstado premium actualizado para %s: %s";
+    public String errAdminUserNotFound = "§cEl usuario %s no existe en la base de datos.";
+    public String errAdminUsage = "§cUso: /directauth premium <usuario> <true|false>";
+
     // --- Mensajes de Restricción ---
     public String msgNoDrop = "§cNo puedes soltar objetos antes de autenticarte";
     public String msgUseCommands = "§cUsa comandos para autenticarte";

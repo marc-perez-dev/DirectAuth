@@ -3,6 +3,8 @@ package com.marcp.directauth.mixin;
 import com.marcp.directauth.DirectAuth;
 import com.marcp.directauth.data.UserData;
 import com.mojang.authlib.GameProfile;
+import net.minecraft.network.Connection;
+import net.minecraft.network.protocol.login.ClientboundHelloPacket;
 import net.minecraft.network.protocol.login.ServerboundHelloPacket;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.network.ServerLoginPacketListenerImpl;
@@ -19,10 +21,19 @@ import java.util.UUID;
 public abstract class MixinServerLoginPacketListenerImpl {
 
     @Shadow @Final private MinecraftServer server;
-    // @Shadow private GameProfile gameProfile; // Eliminado para evitar problemas de mapeo
+    @Shadow @Final public Connection connection;
     
-    // Métodos shadow para invocar la lógica nativa
-    @Shadow protected abstract void startClientVerification(GameProfile profile);
+    // CORRECCIÓN 1: 'nonce' -> 'challenge'
+    @Shadow private byte[] challenge; 
+    
+    // CORRECCIÓN 2: 'gameProfile' -> 'authenticatedProfile'
+    @Shadow private GameProfile authenticatedProfile;
+
+    @Shadow @Final private String serverId;
+    @Shadow private ServerLoginPacketListenerImpl.State state;
+    
+    // NUEVO CAMPO NECESARIO: Aquí se guarda el nombre temporalmente
+    @Shadow private String requestedUsername;
 
     @Inject(method = "handleHello", at = @At("HEAD"), cancellable = true)
     public void onHandleHello(ServerboundHelloPacket packet, CallbackInfo ci) {
@@ -31,25 +42,34 @@ public abstract class MixinServerLoginPacketListenerImpl {
 
         String username = packet.name();
         
-        // Consultamos la DB local (rápido, en memoria)
-        // Nota: Asegurarse de que DirectAuth.getDatabase() esté inicializado
         if (DirectAuth.getDatabase() == null) return;
         
         UserData data = DirectAuth.getDatabase().getUser(username);
 
-        // Si el usuario activó el modo Premium previamente
+        // Si el usuario es Premium en nuestra DB
         if (data != null && data.isPremium() && data.getOnlineUUID() != null) {
             try {
-                // Forzamos el inicio de sesión seguro usando la UUID real guardada
-                UUID uuid = UUID.fromString(data.getOnlineUUID());
-                GameProfile premiumProfile = new GameProfile(uuid, username);
-                this.startClientVerification(premiumProfile);
+                // 1. Inicializamos el nombre de usuario (CRÍTICO para evitar el NPE)
+                this.requestedUsername = username;
                 
-                // Cancelamos el flujo normal para evitar que entre como Offline
+                // 2. Preparamos el estado para esperar la clave de encriptación
+                this.state = ServerLoginPacketListenerImpl.State.KEY;
+                
+                // 3. Enviamos el reto de encriptación
+                this.connection.send(new ClientboundHelloPacket(
+                    this.serverId, 
+                    this.server.getKeyPair().getPublic().getEncoded(), 
+                    this.challenge, 
+                    true
+                ));
+                
+                // 4. Cancelamos el flujo offline
                 ci.cancel();
-            } catch (IllegalArgumentException e) {
-                // Si la UUID guardada es inválida, dejamos pasar como offline (fail-safe)
-                DirectAuth.LOGGER.error("Invalid UUID for premium user {}: {}", username, data.getOnlineUUID());
+                
+            } catch (Exception e) {
+                DirectAuth.LOGGER.error("Error iniciando handshake premium para {}: {}", username, e.getMessage());
+                // En caso de error, dejamos que fluya (no cancelamos) para que entre offline como fallback
+                // o desconectamos manualmente si prefieres seguridad estricta.
             }
         }
     }
