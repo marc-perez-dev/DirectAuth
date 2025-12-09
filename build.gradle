@@ -135,6 +135,10 @@ dependencies {
     // http://www.gradle.org/docs/current/userguide/dependency_management.html
     // Dependencias del proyecto
     // Gson para manejo de JSON (ya incluido en Minecraft pero por claridad)
+    
+    // Driver de SQLite
+    implementation 'org.xerial:sqlite-jdbc:3.46.0.0'
+    jarJar 'org.xerial:sqlite-jdbc:3.46.0.0'
 }
 
 // This block of code expands all declared replace properties in the specified resource targets.
