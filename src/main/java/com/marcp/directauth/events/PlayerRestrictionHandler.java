@@ -13,6 +13,7 @@ import net.neoforged.neoforge.event.ServerChatEvent;
 import net.neoforged.neoforge.event.entity.EntityMountEvent;
 import net.neoforged.neoforge.event.entity.item.ItemTossEvent;
 import net.neoforged.neoforge.event.entity.living.LivingDamageEvent;
+import net.neoforged.neoforge.event.entity.living.LivingHealEvent; // IMPORTANTE
 import net.neoforged.neoforge.event.entity.player.AttackEntityEvent;
 import net.neoforged.neoforge.event.entity.player.ItemEntityPickupEvent;
 import net.neoforged.neoforge.event.entity.player.PlayerInteractEvent;
@@ -30,7 +31,6 @@ public class PlayerRestrictionHandler {
 
     public static void removeAnchor(ServerPlayer player) {
         anchorPositions.remove(player.getUUID());
-        // Limpiamos los efectos visuales al autenticarse
         player.removeAllEffects();
     }
     
@@ -41,41 +41,46 @@ public class PlayerRestrictionHandler {
         return false;
     }
 
-    // --- 1. Movimiento y Tick (OPTIMIZADO) ---
+    // --- NUEVO: Bloquear Regeneración de Salud ---
+    @SubscribeEvent
+    public void onEntityHeal(LivingHealEvent event) {
+        if (isNotAuth(event.getEntity())) {
+            event.setCanceled(true); // Nadie se cura sin contraseña
+        }
+    }
+
+    // --- 1. Movimiento y Tick ---
     @SubscribeEvent
     public void onEntityTick(EntityTickEvent.Post event) {
         if (event.getEntity() instanceof ServerPlayer player) {
             
-            // Si NO está autenticado
             if (isNotAuth(player)) {
                 UUID uuid = player.getUUID();
                 
-                // 1. Guardar ancla inicial si no existe
                 if (!anchorPositions.containsKey(uuid)) {
                     anchorPositions.put(uuid, player.position());
                 }
                 
-                // 2. Aplicar "Soft Freeze" (Efectos)
-                // SLOWNESS 255: Impide caminar.
-                // JUMP 250 (Negativo): Impide saltar.
-                // BLINDNESS: Oculta el entorno (seguridad visual).
-                // Duration 60 ticks (3s) para que no parpadee, se refresca constantemente.
+                // Efectos de restricción
                 player.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SLOWDOWN, 60, 255, false, false));
                 player.addEffect(new MobEffectInstance(MobEffects.JUMP, 60, 250, false, false));
                 player.addEffect(new MobEffectInstance(MobEffects.BLINDNESS, 60, 1, false, false));
                 
-                // 3. Teleport de seguridad (Solo si se aleja mucho)
-                // Aumentamos el margen a 1.5 bloques (2.25 cuadrado) para evitar jitter
+                // Forzar nivel de comida para evitar intentos de regeneración del motor del juego
+                // (Aunque LivingHealEvent ya lo bloquea, esto evita la animación de temblor de hambre o saturación)
+                if (player.getFoodData().getFoodLevel() > 0) {
+                     // Opcional: Mantener la comida estática o dejarla como está. 
+                     // Con LivingHealEvent es suficiente.
+                }
+
                 Vec3 anchor = anchorPositions.get(uuid);
                 if (player.position().distanceToSqr(anchor) > 2.25) {
                     player.teleportTo(anchor.x, anchor.y, anchor.z);
                     player.setDeltaMovement(0, 0, 0);
                 }
                 
-                // Extinguir fuego
-                if (player.isOnFire()) player.clearFire();
+                // Removed player.clearFire() as fire ticks will be restored on authentication.
                 
-                // Recordatorio
                 if (player.tickCount % 100 == 0) {
                     player.displayClientMessage(
                         Component.literal(DirectAuth.getConfig().msgAuthReminder),
@@ -83,7 +88,6 @@ public class PlayerRestrictionHandler {
                     );
                 }
             } 
-            // Si YA está autenticado, nos aseguramos de borrar el ancla
             else if (anchorPositions.containsKey(player.getUUID())) {
                 anchorPositions.remove(player.getUUID());
             }
