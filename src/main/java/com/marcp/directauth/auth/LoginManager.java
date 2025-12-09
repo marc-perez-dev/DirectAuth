@@ -113,7 +113,7 @@ public class LoginManager {
         UserData data = preLoginCache.remove(username.toLowerCase());
         
         // Si es el marcador de "no existe", devolvemos null real
-        if (data != null && "NULL_MARKER".equals(data.getUsername())) {
+        if (data != null && "null_marker".equals(data.getUsername())) {
             return null;
         }
         return data;
