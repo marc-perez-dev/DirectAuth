@@ -23,7 +23,7 @@ public class LoginManager {
     private static final int MAX_ATTEMPTS = 5; // Máximo 5 intentos antes de kick
     
     // Configuración de PBKDF2
-    private static final int ITERATIONS = 10000;
+    private static final int ITERATIONS = 100000;
     private static final int KEY_LENGTH = 256;
     private static final String ALGORITHM = "PBKDF2WithHmacSHA256";
     private static final SecureRandom RANDOM = new SecureRandom();
