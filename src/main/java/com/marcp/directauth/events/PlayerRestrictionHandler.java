@@ -3,22 +3,22 @@ package com.marcp.directauth.events;
 import com.marcp.directauth.DirectAuth;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.effect.MobEffectInstance;
+import net.minecraft.world.effect.MobEffects;
 import net.minecraft.world.phys.Vec3;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.neoforge.common.util.TriState;
+import net.neoforged.neoforge.event.CommandEvent;
+import net.neoforged.neoforge.event.ServerChatEvent;
 import net.neoforged.neoforge.event.entity.EntityMountEvent;
 import net.neoforged.neoforge.event.entity.item.ItemTossEvent;
 import net.neoforged.neoforge.event.entity.living.LivingDamageEvent;
-import net.neoforged.neoforge.event.entity.living.LivingEntityUseItemEvent;
 import net.neoforged.neoforge.event.entity.player.AttackEntityEvent;
 import net.neoforged.neoforge.event.entity.player.ItemEntityPickupEvent;
 import net.neoforged.neoforge.event.entity.player.PlayerInteractEvent;
 import net.neoforged.neoforge.event.entity.player.PlayerXpEvent;
 import net.neoforged.neoforge.event.level.BlockEvent;
-import net.neoforged.neoforge.event.CommandEvent;
-import net.neoforged.neoforge.event.ServerChatEvent;
 import net.neoforged.neoforge.event.tick.EntityTickEvent;
-
 
 import java.util.Map;
 import java.util.UUID;
@@ -26,12 +26,12 @@ import java.util.concurrent.ConcurrentHashMap;
 
 public class PlayerRestrictionHandler {
     
-    // Almacena la posición donde el jugador debe permanecer anclado
     private static final Map<UUID, Vec3> anchorPositions = new ConcurrentHashMap<>();
 
-    // Limpiar ancla cuando el jugador se desconecta o se autentica
     public static void removeAnchor(ServerPlayer player) {
         anchorPositions.remove(player.getUUID());
+        // Limpiamos los efectos visuales al autenticarse
+        player.removeAllEffects();
     }
     
     private boolean isNotAuth(Object entity) {
@@ -41,143 +41,110 @@ public class PlayerRestrictionHandler {
         return false;
     }
 
-    // --- 1. Movimiento y Tick ---
+    // --- 1. Movimiento y Tick (OPTIMIZADO) ---
     @SubscribeEvent
     public void onEntityTick(EntityTickEvent.Post event) {
-        if (isNotAuth(event.getEntity())) {
-            ServerPlayer player = (ServerPlayer) event.getEntity();
-            UUID uuid = player.getUUID();
+        if (event.getEntity() instanceof ServerPlayer player) {
             
-            // Lógica de Ancla
-            if (!anchorPositions.containsKey(uuid)) {
-                anchorPositions.put(uuid, player.position());
-            }
-            Vec3 anchor = anchorPositions.get(uuid);
-            
-            if (player.position().distanceToSqr(anchor) > 0.25) {
-                player.teleportTo(anchor.x, anchor.y, anchor.z);
-                player.setDeltaMovement(0, 0, 0);
-            }
-            
-            // Extinguir fuego si se quema mientras se loguea
-            if (player.isOnFire()) {
-                player.clearFire();
-            }
-            
-            // Recordatorio periódico
-            if (player.tickCount % 100 == 0) {
-                player.displayClientMessage(
-                    Component.literal(DirectAuth.getConfig().msgAuthReminder),
-                    true 
-                );
-            }
-        } else if (event.getEntity() instanceof ServerPlayer player) {
-            // Limpieza si ya se autenticó
-            if (anchorPositions.containsKey(player.getUUID())) {
+            // Si NO está autenticado
+            if (isNotAuth(player)) {
+                UUID uuid = player.getUUID();
+                
+                // 1. Guardar ancla inicial si no existe
+                if (!anchorPositions.containsKey(uuid)) {
+                    anchorPositions.put(uuid, player.position());
+                }
+                
+                // 2. Aplicar "Soft Freeze" (Efectos)
+                // SLOWNESS 255: Impide caminar.
+                // JUMP 250 (Negativo): Impide saltar.
+                // BLINDNESS: Oculta el entorno (seguridad visual).
+                // Duration 60 ticks (3s) para que no parpadee, se refresca constantemente.
+                player.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SLOWDOWN, 60, 255, false, false));
+                player.addEffect(new MobEffectInstance(MobEffects.JUMP, 60, 250, false, false));
+                player.addEffect(new MobEffectInstance(MobEffects.BLINDNESS, 60, 1, false, false));
+                
+                // 3. Teleport de seguridad (Solo si se aleja mucho)
+                // Aumentamos el margen a 1.5 bloques (2.25 cuadrado) para evitar jitter
+                Vec3 anchor = anchorPositions.get(uuid);
+                if (player.position().distanceToSqr(anchor) > 2.25) {
+                    player.teleportTo(anchor.x, anchor.y, anchor.z);
+                    player.setDeltaMovement(0, 0, 0);
+                }
+                
+                // Extinguir fuego
+                if (player.isOnFire()) player.clearFire();
+                
+                // Recordatorio
+                if (player.tickCount % 100 == 0) {
+                    player.displayClientMessage(
+                        Component.literal(DirectAuth.getConfig().msgAuthReminder),
+                        true 
+                    );
+                }
+            } 
+            // Si YA está autenticado, nos aseguramos de borrar el ancla
+            else if (anchorPositions.containsKey(player.getUUID())) {
                 anchorPositions.remove(player.getUUID());
             }
         }
     }
 
-    // --- 2. Interacciones con el Mundo ---
+    // --- (El resto de eventos se mantienen igual que en tu código original) ---
+    
     @SubscribeEvent
     public void onBlockBreak(BlockEvent.BreakEvent event) {
-        if (isNotAuth(event.getPlayer())) {
-            event.setCanceled(true);
-        }
+        if (isNotAuth(event.getPlayer())) event.setCanceled(true);
     }
 
     @SubscribeEvent
     public void onLeftClickBlock(PlayerInteractEvent.LeftClickBlock event) {
-        if (isNotAuth(event.getEntity())) {
-            event.setCanceled(true);
-        }
+        if (isNotAuth(event.getEntity())) event.setCanceled(true);
     }
-    
     @SubscribeEvent
     public void onRightClickBlock(PlayerInteractEvent.RightClickBlock event) {
-        if (isNotAuth(event.getEntity())) {
-            event.setCanceled(true);
-        }
+        if (isNotAuth(event.getEntity())) event.setCanceled(true);
     }
-    
     @SubscribeEvent
     public void onRightClickItem(PlayerInteractEvent.RightClickItem event) {
-        if (isNotAuth(event.getEntity())) {
-            event.setCanceled(true);
-        }
+        if (isNotAuth(event.getEntity())) event.setCanceled(true);
     }
-
     @SubscribeEvent
     public void onInteractEntity(PlayerInteractEvent.EntityInteract event) {
-        if (isNotAuth(event.getEntity())) {
-            event.setCanceled(true);
-        }
+        if (isNotAuth(event.getEntity())) event.setCanceled(true);
     }
-
     @SubscribeEvent
     public void onMount(EntityMountEvent event) {
-        // Bloquear intentar montar
-        if (event.isMounting() && isNotAuth(event.getEntityMounting())) {
-            event.setCanceled(true);
-        }
+        if (event.isMounting() && isNotAuth(event.getEntityMounting())) event.setCanceled(true);
     }
-
-    // --- 3. Inventario y Objetos ---
     @SubscribeEvent
     public void onItemToss(ItemTossEvent event) {
         if (isNotAuth(event.getPlayer())) {
             event.setCanceled(true);
-            
             if (event.getPlayer() instanceof ServerPlayer player) {
-                // Recuperar el ítem que se intentó tirar
-                net.minecraft.world.item.ItemStack stack = event.getEntity().getItem();
-                
-                // Devolverlo al inventario
-                player.getInventory().add(stack);
-                
-                // Forzar actualización visual del inventario al cliente
+                player.getInventory().add(event.getEntity().getItem());
                 player.inventoryMenu.sendAllDataToRemote();
                 player.containerMenu.broadcastChanges();
-                
                 player.sendSystemMessage(Component.literal(DirectAuth.getConfig().msgNoDrop));
             }
         }
     }
-    
     @SubscribeEvent
     public void onItemPickup(ItemEntityPickupEvent.Pre event) {
-        if (isNotAuth(event.getPlayer())) {
-            event.setCanPickup(TriState.FALSE);
-        }
+        if (isNotAuth(event.getPlayer())) event.setCanPickup(TriState.FALSE);
     }
-    
-
-    
     @SubscribeEvent
     public void onXpPickup(PlayerXpEvent.PickupXp event) {
-        if (isNotAuth(event.getEntity())) {
-            event.setCanceled(true);
-        }
+        if (isNotAuth(event.getEntity())) event.setCanceled(true);
     }
-
-    // --- 4. Combate y Salud ---
     @SubscribeEvent
     public void onAttackEntity(AttackEntityEvent event) {
-        if (isNotAuth(event.getEntity())) {
-            event.setCanceled(true);
-        }
+        if (isNotAuth(event.getEntity())) event.setCanceled(true);
     }
-
     @SubscribeEvent
     public void onDamage(LivingDamageEvent.Pre event) {
-        // Invulnerabilidad TOTAL mientras no esté logueado
-        if (isNotAuth(event.getEntity())) {
-            event.setNewDamage(0); // Anular daño en lugar de cancelar evento
-        }
+        if (isNotAuth(event.getEntity())) event.setNewDamage(0);
     }
-
-    // --- 5. Chat ---
     @SubscribeEvent
     public void onChat(ServerChatEvent event) {
         if (isNotAuth(event.getPlayer())) {
@@ -188,7 +155,6 @@ public class PlayerRestrictionHandler {
             }
         }
     }
-
     @SubscribeEvent
     public void onCommand(CommandEvent event) {
         if (event.getParseResults().getContext().getSource().getEntity() instanceof ServerPlayer player) {
@@ -196,10 +162,7 @@ public class PlayerRestrictionHandler {
                 String input = event.getParseResults().getReader().getString();
                 String[] parts = input.trim().split(" ");
                 String cmd = parts.length > 0 ? parts[0] : "";
-                
-                if (!cmd.equalsIgnoreCase("register") && 
-                    !cmd.equalsIgnoreCase("login") && 
-                    !cmd.equalsIgnoreCase("premium")) {
+                if (!cmd.equalsIgnoreCase("register") && !cmd.equalsIgnoreCase("login") && !cmd.equalsIgnoreCase("premium")) {
                     event.setCanceled(true);
                     player.sendSystemMessage(Component.literal(DirectAuth.getConfig().msgUseCommands));
                 }
