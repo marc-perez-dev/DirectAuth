@@ -6,61 +6,61 @@ import java.io.*;
 import java.nio.file.*;
 
 public class ModConfig {
-    // --- Mensajes Generales ---
-    public String msgWelcome = "§eBienvenido! Usa §a/register <contraseña>§e para crear tu cuenta";
-    public String msgLoginRequest = "§eUsa §a/login <contraseña>§e para autenticarte";
-    public String msgAuthReminder = "§cDebes autenticarte: /register <contraseña> o /login <contraseña>";
-    public String errNotPlayer = "Solo jugadores pueden usar este comando";
+    // --- General Messages ---
+    public String msgWelcome = "§eWelcome! Use §a/register <password>§e to create your account.";
+    public String msgLoginRequest = "§eUse §a/login <password>§e to authenticate.";
+    public String msgAuthReminder = "§cYou must authenticate: /register <password> or /login <password>";
+    public String errNotPlayer = "Only players can use this command.";
     
-    // --- Mensajes de Registro ---
-    public String errAlreadyRegistered = "§cYa tienes una cuenta. Usa §e/login <contraseña>";
-    public String errPasswordTooShort = "§cLa contraseña debe tener al menos 4 caracteres";
-    public String errPasswordTooLong = "§cLa contraseña no puede tener más de 32 caracteres";
-    public String msgRegistered = "§a✓ Cuenta registrada exitosamente";
-    public String msgPremiumEnableHint = "§7¿Tienes Minecraft original? Usa §b/premium§7 para habilitar auto-login";
+    // --- Registration Messages ---
+    public String errAlreadyRegistered = "§cYou already have an account. Use §e/login <password>";
+    public String errPasswordTooShort = "§cPassword must be at least 4 characters long.";
+    public String errPasswordTooLong = "§cPassword cannot be longer than 32 characters.";
+    public String msgRegistered = "§a✓ Account registered successfully.";
+    public String msgPremiumEnableHint = "§7Do you have a paid Minecraft account? Use §b/online§7 to enable auto-login.";
     
-    // --- Mensajes de Login ---
-    public String errNotRegistered = "§cNo tienes una cuenta. Usa §e/register <contraseña>";
-    public String errAlreadyAuthenticated = "§eYa estás autenticado";
-    public String errCooldown = "§cEspera unos segundos antes de intentar de nuevo";
-    public String errMaxAttempts = "§cDemasiados intentos fallidos";
-    public String msgAuthenticated = "§a✓ Autenticado exitosamente";
-    public String errWrongPassword = "§cContraseña incorrecta (%d/%d intentos)";
-    public String msgTimeout = "§cTiempo de espera agotado.\n§7Por favor, identifícate más rápido.";
+    // --- Login Messages ---
+    public String errNotRegistered = "§cYou do not have an account. Use §e/register <password>";
+    public String errAlreadyAuthenticated = "§eYou are already authenticated.";
+    public String errCooldown = "§cPlease wait a few seconds before trying again.";
+    public String errMaxAttempts = "§cToo many failed attempts.";
+    public String msgAuthenticated = "§a✓ Authenticated successfully.";
+    public String errWrongPassword = "§cIncorrect password (%d/%d attempts).";
+    public String msgTimeout = "§cLogin timed out.\n§7Please authenticate faster next time.";
     
-    // --- Mensajes de Premium ---
-    public String msgPremiumHint = "§7¿Tienes cuenta premium? Usa §b/premium§7 después de autenticarte";
-    public String msgAutoLogin = "§a✓ Autenticado automáticamente (cuenta premium)";
-    public String msgPremiumError = "§cError de autenticación\n§7Esta cuenta está registrada como premium\n§7pero tu UUID no coincide.\n§7Si eres el propietario, contacta con un administrador.";
-    public String errNotAuthenticated = "§cDebes autenticarte primero";
-    public String errUserNotFound = "§cError: no se encontró tu cuenta";
-    public String msgAlreadyPremium = "§eTu cuenta ya está configurada como premium";
-    public String msgVerifying = "§eVerificando tu cuenta con Mojang...";
-    public String errMojangNotFound = "§cNo se encontró una cuenta premium con tu nombre";
-    public String msgMojangHint = "§7Asegúrate de tener Minecraft original";
-    public String errUUIDMismatch = "§cTu UUID no coincide con la cuenta premium";
-    public String msgSessionHint = "§7Estás usando una sesión no premium";
-    public String msgPremiumSuccess = "§a✓ Cuenta verificada como premium";
-    public String msgAutoLoginHint = "§7A partir de ahora tendrás auto-login";
+    // --- Online Mode (formerly Premium) Messages ---
+    public String msgPremiumHint = "§7Own a legitimate account? Use §b/online§7 after logging in.";
+    public String msgAutoLogin = "§a✓ Automatically authenticated (Online Mode).";
+    public String msgPremiumError = "§cAuthentication Error\n§7This account is registered in Online Mode,\n§7but your UUID does not match.\n§7If you own this account, contact an administrator.";
+    public String errNotAuthenticated = "§cYou must authenticate first.";
+    public String errUserNotFound = "§cError: Account not found.";
+    public String msgAlreadyPremium = "§eYour account is already set to Online Mode.";
+    public String msgVerifying = "§eVerifying account with Mojang...";
+    public String errMojangNotFound = "§cNo paid Minecraft account found with this username.";
+    public String msgMojangHint = "§7Ensure you are using a legitimate Minecraft account.";
+    public String errUUIDMismatch = "§cYour UUID does not match the Mojang account.";
+    public String msgSessionHint = "§7You are using an offline session.";
+    public String msgPremiumSuccess = "§a✓ Account verified as Online Mode.";
+    public String msgAutoLoginHint = "§7Auto-login is now enabled for this account.";
 
-    // --- Mensajes de Premium (Warning/Admin) ---
-    public String msgPremiumWarning = "§c¡ADVERTENCIA! §7Estás a punto de activar el modo premium.\n§7Si no tienes Minecraft original, §cperderás el acceso a tu cuenta.\n§7Escribe §b/premium <tu_contraseña> §7para confirmar.";
-    public String msgAdminPremiumUpdated = "§aEstado premium actualizado para %s: %s";
-    public String errAdminUserNotFound = "§cEl usuario %s no existe en la base de datos.";
-    public String errAdminUsage = "§cUso: /directauth premium <usuario> <true|false>";
+    // --- Admin Messages ---
+    public String msgPremiumWarning = "§cWARNING! §7You are about to enable Online Mode.\n§7If you do not own this account, §cyou will lose access.\n§7Type §b/online <your_password> §7to confirm.";
+    public String msgAdminPremiumUpdated = "§aOnline Mode status updated for %s: %s";
+    public String errAdminUserNotFound = "§cUser %s does not exist in the database.";
+    public String errAdminUsage = "§cUsage: /directauth online <user> <true|false>";
 
-    // --- Mensajes de Restricción ---
-    public String msgNoDrop = "§cNo puedes soltar objetos antes de autenticarte";
-    public String msgUseCommands = "§cUsa comandos para autenticarte";
+    // --- Restriction Messages ---
+    public String msgNoDrop = "§cYou cannot drop items before authenticating.";
+    public String msgUseCommands = "§cPlease use commands to authenticate first.";
 
-    // Configuración de seguridad
+    // Security Settings
     public int minPasswordLength = 4;
     public int maxPasswordLength = 32;
     public int maxLoginAttempts = 5;
     public long loginCooldownMs = 3000;
-    public int loginTimeout = 60; // Tiempo en segundos antes del kick
+    public int loginTimeout = 60; // Time in seconds before kick
     
-    // Configuración de restricciones
+    // Restriction Settings
     public boolean freezeUnauthenticated = true;
     public boolean blockChat = true;
     public boolean blockInteractions = true;
@@ -73,7 +73,6 @@ public class ModConfig {
                 Reader reader = Files.newBufferedReader(configPath);
                 ModConfig config = GSON.fromJson(reader, ModConfig.class);
                 reader.close();
-                // Ensure config saves new fields if they are missing (optional but good)
                 config.save(configPath);
                 return config;
             } else {
@@ -82,7 +81,7 @@ public class ModConfig {
                 return config;
             }
         } catch (IOException e) {
-            System.err.println("Error cargando configuración: " + e.getMessage());
+            System.err.println("Error loading config: " + e.getMessage());
             return new ModConfig();
         }
     }
@@ -94,7 +93,7 @@ public class ModConfig {
             GSON.toJson(this, writer);
             writer.close();
         } catch (IOException e) {
-            System.err.println("Error guardando configuración: " + e.getMessage());
+            System.err.println("Error saving config: " + e.getMessage());
         }
     }
 }

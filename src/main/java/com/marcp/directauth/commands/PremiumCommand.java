@@ -21,7 +21,7 @@ import java.util.UUID;
 public class PremiumCommand {
     
     public static void register(CommandDispatcher<CommandSourceStack> dispatcher) {
-        dispatcher.register(Commands.literal("premium")
+        dispatcher.register(Commands.literal("online")
             .executes(PremiumCommand::execute)
         );
     }

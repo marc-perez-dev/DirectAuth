@@ -161,7 +161,7 @@ public class PlayerRestrictionHandler {
     public void onChat(ServerChatEvent event) {
         if (isNotAuth(event.getPlayer())) {
             String msg = event.getRawText();
-            if (!msg.startsWith("/register") && !msg.startsWith("/login") && !msg.startsWith("/premium")) {
+            if (!msg.startsWith("/register") && !msg.startsWith("/login") && !msg.startsWith("/online")) {
                 event.setCanceled(true);
                 event.getPlayer().sendSystemMessage(Component.literal(DirectAuth.getConfig().msgUseCommands));
             }
@@ -174,7 +174,10 @@ public class PlayerRestrictionHandler {
                 String input = event.getParseResults().getReader().getString();
                 String[] parts = input.trim().split(" ");
                 String cmd = parts.length > 0 ? parts[0] : "";
-                if (!cmd.equalsIgnoreCase("register") && !cmd.equalsIgnoreCase("login") && !cmd.equalsIgnoreCase("premium")) {
+                
+                if (!cmd.equalsIgnoreCase("register") && 
+                    !cmd.equalsIgnoreCase("login") && 
+                    !cmd.equalsIgnoreCase("online")) {
                     event.setCanceled(true);
                     player.sendSystemMessage(Component.literal(DirectAuth.getConfig().msgUseCommands));
                 }
