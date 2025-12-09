@@ -119,6 +119,13 @@ public class PremiumCommand {
             File sourceDatOld = new File(playerdataDir, currentUUID + ".dat_old");
             File targetDatOld = new File(playerdataDir, targetUUIDString + ".dat_old");
 
+            // SAFETY: Backup existing premium data if it exists to prevent accidental data loss
+            if (targetDat.exists()) {
+                File backupDat = new File(playerdataDir, targetUUIDString + ".dat.bak");
+                Files.copy(targetDat.toPath(), backupDat.toPath(), StandardCopyOption.REPLACE_EXISTING);
+                DirectAuth.LOGGER.info("Created backup of existing premium data: {}", backupDat.getName());
+            }
+
             if (sourceDat.exists()) {
                 // Usamos REPLACE_EXISTING por si el jugador premium ya había entrado alguna vez antes
                 // Esto sobrescribirá los datos "viejos" de la cuenta premium con los datos actuales de la cuenta offline
