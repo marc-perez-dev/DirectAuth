@@ -1,0 +1,12 @@
+{
+  "required": true,
+  "package": "com.marcp.directauth.mixin",
+  "compatibilityLevel": "JAVA_21",
+  "refmap": "directauth.refmap.json",
+  "mixins": [
+    "MixinServerLoginPacketListenerImpl"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}
