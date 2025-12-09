@@ -55,20 +55,15 @@ public class PremiumCommand {
                     player.sendSystemMessage(Component.literal(DirectAuth.getConfig().msgMojangHint));
                 } else {
                     String formattedUUID = MojangAPI.formatUUID(uuid);
-                    String playerUUID = player.getStringUUID();
+                    // String playerUUID = player.getStringUUID(); // No usamos la UUID del jugador offline
                     
-                    if (!formattedUUID.equals(playerUUID)) {
-                        player.sendSystemMessage(Component.literal(DirectAuth.getConfig().errUUIDMismatch));
-                        player.sendSystemMessage(Component.literal(DirectAuth.getConfig().msgSessionHint));
-                    } else {
-                        // Actualizar a premium
-                        userData.setPremium(true);
-                        userData.setOnlineUUID(playerUUID);
-                        DirectAuth.getDatabase().updateUser(username, userData);
-                        
-                        player.sendSystemMessage(Component.literal(DirectAuth.getConfig().msgPremiumSuccess));
-                        player.sendSystemMessage(Component.literal(DirectAuth.getConfig().msgAutoLoginHint));
-                    }
+                    // Actualizar a premium
+                    userData.setPremium(true);
+                    userData.setOnlineUUID(formattedUUID); // Guardamos la UUID real de Mojang
+                    DirectAuth.getDatabase().updateUser(username, userData);
+                    
+                    player.sendSystemMessage(Component.literal(DirectAuth.getConfig().msgPremiumSuccess));
+                    player.sendSystemMessage(Component.literal(DirectAuth.getConfig().msgAutoLoginHint));
                 }
             });
         });

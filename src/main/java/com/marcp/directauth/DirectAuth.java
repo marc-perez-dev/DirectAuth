@@ -9,16 +9,19 @@ import com.marcp.directauth.data.DatabaseManager;
 import com.marcp.directauth.data.PositionManager;
 import com.marcp.directauth.events.ConnectionHandler;
 import com.marcp.directauth.events.PlayerRestrictionHandler;
+import com.mojang.logging.LogUtils;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.fml.common.Mod;
 import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.event.RegisterCommandsEvent;
+import org.slf4j.Logger;
 
 import java.nio.file.Path;
 
 @Mod(DirectAuth.MODID)
 public class DirectAuth {
     public static final String MODID = "directauth";
+    public static final Logger LOGGER = LogUtils.getLogger();
     private static DatabaseManager database;
     private static PositionManager positionManager;
     private static LoginManager loginManager;
