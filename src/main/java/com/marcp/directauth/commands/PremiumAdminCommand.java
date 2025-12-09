@@ -13,7 +13,7 @@ import net.minecraft.network.chat.Component;
 public class PremiumAdminCommand {
     public static void register(CommandDispatcher<CommandSourceStack> dispatcher) {
         dispatcher.register(Commands.literal("directauth")
-            .then(Commands.literal("premium")
+            .then(Commands.literal("online")
                 .requires(source -> source.hasPermission(4)) // OP Level 4
                 .then(Commands.argument("user", StringArgumentType.string())
                     .then(Commands.argument("value", BoolArgumentType.bool())
