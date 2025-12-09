@@ -4,6 +4,8 @@ import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import java.io.*;
 import java.nio.file.*;
+import java.util.List;
+import java.util.ArrayList;
 
 public class ModConfig {
     // --- General Settings ---
@@ -20,6 +22,13 @@ public class ModConfig {
     public boolean freezeUnauthenticated = true;
     public boolean blockChat = true;
     public boolean blockInteractions = true;
+
+    // Data Migration Settings
+    public List<String> foldersToMigrate = new ArrayList<>(List.of(
+        "playerdata",
+        "stats",
+        "advancements"
+    ));
     
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
     

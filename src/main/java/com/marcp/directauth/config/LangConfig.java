@@ -43,6 +43,7 @@ public class LangConfig {
     public String msgPremiumSuccess = "§a✓ Account verified as Online Mode.";
     public String msgPremiumKick = "§aAccount verified!\n§ePlease rejoin to apply changes.";
     public String msgAutoLoginHint = "§7Auto-login is now enabled for this account.";
+    public String msgOnlineModeWarning = "§6WARNING! §eEnabling Online Mode will migrate your player data (e.g., inventory, stats, advancements). While DirectAuth tries to migrate data from other mods, there is a small risk of losing mod-specific data if not configured correctly. Please ensure your server owner has configured all mod data folders in directauth-config.json before proceeding, or make a backup.";
 
     // --- Admin Messages ---
     public String msgPremiumWarning = "§cWARNING! §7You are about to enable Online Mode.\n§7If you do not own this account, §cyou will lose access.\n§7Type §b/online <your_password> §7to confirm.";
@@ -116,6 +117,7 @@ public class LangConfig {
             msgPremiumSuccess = "§a✓ Cuenta verificada como Modo Online.";
             msgPremiumKick = "§a¡Cuenta verificada!\n§ePor favor, vuelve a entrar para aplicar los cambios.";
             msgAutoLoginHint = "§7El auto-login está activado para esta cuenta.";
+            msgOnlineModeWarning = "§6¡ADVERTENCIA! §eActivar el Modo Online migrará tus datos de jugador (ej. inventario, estadísticas, avances). Aunque DirectAuth intenta migrar datos de otros mods, existe un pequeño riesgo de perder datos específicos de mods si no se configura correctamente. Asegúrate de que el dueño de tu servidor haya configurado todas las carpetas de datos de mods en directauth-config.json antes de continuar, o haz una copia de seguridad.";
 
             // --- Admin Messages ---
             msgPremiumWarning = "§c¡ADVERTENCIA! §7Estás a punto de activar el Modo Online.\n§7Si no eres dueño de esta cuenta, §cperderás el acceso.\n§7Escribe §b/online <tu_contraseña> §7para confirmar.";

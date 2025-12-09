@@ -2,6 +2,8 @@ package com.marcp.directauth.commands;
 
 import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.context.CommandContext;
+import com.mojang.brigadier.arguments.StringArgumentType;
+import com.marcp.directauth.auth.LoginManager;
 import com.marcp.directauth.DirectAuth;
 import com.marcp.directauth.auth.MojangAPI;
 import com.marcp.directauth.data.UserData;
@@ -22,11 +24,14 @@ public class PremiumCommand {
     
     public static void register(CommandDispatcher<CommandSourceStack> dispatcher) {
         dispatcher.register(Commands.literal("online")
-            .executes(PremiumCommand::execute)
+            .executes(context -> execute(context, null))
+            .then(Commands.argument("password", StringArgumentType.string())
+                .executes(context -> execute(context, StringArgumentType.getString(context, "password")))
+            )
         );
     }
     
-    private static int execute(CommandContext<CommandSourceStack> context) {
+    private static int execute(CommandContext<CommandSourceStack> context, String password) {
         if (!(context.getSource().getEntity() instanceof ServerPlayer player)) {
             context.getSource().sendFailure(Component.literal(DirectAuth.getConfig().getLang().errNotPlayer));
             return 0;
@@ -50,6 +55,23 @@ public class PremiumCommand {
         if (userData.isPremium()) {
             player.sendSystemMessage(Component.literal(DirectAuth.getConfig().getLang().msgAlreadyPremium));
             return 0;
+        }
+
+        // Si no hay contraseña, mostramos advertencias
+        if (password == null) {
+            player.sendSystemMessage(Component.literal(DirectAuth.getConfig().getLang().msgOnlineModeWarning));
+            player.sendSystemMessage(Component.literal(DirectAuth.getConfig().getLang().msgPremiumWarning));
+            return 1;
+        }
+
+        // Verificar contraseña
+        if (!LoginManager.checkPassword(password, userData.getPasswordHash())) {
+             player.sendSystemMessage(Component.literal(String.format(
+                DirectAuth.getConfig().getLang().errWrongPassword, 
+                1, 
+                DirectAuth.getConfig().maxLoginAttempts
+            )));
+             return 0;
         }
         
         player.sendSystemMessage(Component.literal(DirectAuth.getConfig().getLang().msgVerifying));
@@ -97,69 +119,54 @@ public class PremiumCommand {
      */
     private static boolean migratePlayerData(ServerPlayer player, String targetUUIDString) {
         try {
-            // 1. Guardar el estado actual del jugador a disco para asegurar que no se pierda nada reciente
+            // 1. Guardar estado actual
             ((PlayerListAccessor) player.getServer().getPlayerList()).callSave(player);
 
             String currentUUID = player.getStringUUID();
-            
-            // Si por alguna razón las UUID son iguales (ej. servidor ya en online-mode), no hacemos nada
             if (currentUUID.equals(targetUUIDString)) return true;
 
-            // Directorios de datos
             File worldDir = player.getServer().getWorldPath(LevelResource.ROOT).toFile();
-            File playerdataDir = player.getServer().getWorldPath(LevelResource.PLAYER_DATA_DIR).toFile();
-            File statsDir = new File(worldDir, "stats");
-            File advancementsDir = new File(worldDir, "advancements");
-
-            // --- Migrar .dat (Inventario, Enderchest, Posición, XP) ---
-            File sourceDat = new File(playerdataDir, currentUUID + ".dat");
-            File targetDat = new File(playerdataDir, targetUUIDString + ".dat");
             
-            // También existe .dat_old a veces
-            File sourceDatOld = new File(playerdataDir, currentUUID + ".dat_old");
-            File targetDatOld = new File(playerdataDir, targetUUIDString + ".dat_old");
+            // Iteramos sobre las carpetas definidas en la configuración
+            for (String folderName : DirectAuth.getConfig().foldersToMigrate) {
+                File folder = new File(worldDir, folderName);
+                
+                if (!folder.exists() || !folder.isDirectory()) continue;
 
-            // SAFETY: Backup existing premium data if it exists to prevent accidental data loss
-            if (targetDat.exists()) {
-                File backupDat = new File(playerdataDir, targetUUIDString + ".dat.bak");
-                Files.copy(targetDat.toPath(), backupDat.toPath(), StandardCopyOption.REPLACE_EXISTING);
-                DirectAuth.LOGGER.info("Created backup of existing premium data: {}", backupDat.getName());
-            }
+                // Buscamos TODOS los archivos que empiecen por la UUID vieja
+                // Esto cubre: UUID.dat, UUID.json, UUID.dat_old, UUID_1.dat, etc.
+                File[] filesToMigrate = folder.listFiles((dir, name) -> name.startsWith(currentUUID));
 
-            if (sourceDat.exists()) {
-                // Usamos REPLACE_EXISTING por si el jugador premium ya había entrado alguna vez antes
-                // Esto sobrescribirá los datos "viejos" de la cuenta premium con los datos actuales de la cuenta offline
-                Files.copy(sourceDat.toPath(), targetDat.toPath(), StandardCopyOption.REPLACE_EXISTING);
-                if (sourceDatOld.exists()) {
-                    Files.copy(sourceDatOld.toPath(), targetDatOld.toPath(), StandardCopyOption.REPLACE_EXISTING);
+                if (filesToMigrate != null) {
+                    for (File sourceFile : filesToMigrate) {
+                        // Generar nombre destino reemplazando la UUID vieja por la nueva
+                        // Ejemplo: "viejaUUID.json" -> "nuevaUUID.json"
+                        // Ejemplo: "viejaUUID_backup.dat" -> "nuevaUUID_backup.dat"
+                        String newFileName = sourceFile.getName().replace(currentUUID, targetUUIDString);
+                        File targetFile = new File(folder, newFileName);
+
+                        // SAFETY: Si ya existe datos premium, hacer backup antes de sobrescribir
+                        if (targetFile.exists()) {
+                            File backupFile = new File(folder, newFileName + ".bak");
+                            Files.copy(targetFile.toPath(), backupFile.toPath(), StandardCopyOption.REPLACE_EXISTING);
+                            DirectAuth.LOGGER.info("Backup created for existing premium data: {}/{}", folderName, backupFile.getName());
+                        }
+
+                        // Mover/Copiar los datos
+                        try {
+                            Files.copy(sourceFile.toPath(), targetFile.toPath(), StandardCopyOption.REPLACE_EXISTING);
+                            DirectAuth.LOGGER.info("Migrated: {}/{} -> {}", folderName, sourceFile.getName(), newFileName);
+                        } catch (IOException e) {
+                            DirectAuth.LOGGER.error("Failed to migrate file: {}/{}", folderName, sourceFile.getName(), e);
+                        }
+                    }
                 }
             }
-
-            // --- Migrar Estadísticas (Statistics) ---
-            File sourceStats = new File(statsDir, currentUUID + ".json");
-            File targetStats = new File(statsDir, targetUUIDString + ".json");
             
-            if (sourceStats.exists()) {
-                // Asegurar que la carpeta stats exista
-                statsDir.mkdirs();
-                Files.copy(sourceStats.toPath(), targetStats.toPath(), StandardCopyOption.REPLACE_EXISTING);
-            }
-
-            // --- Migrar Logros/Avances (Advancements) ---
-            File sourceAdv = new File(advancementsDir, currentUUID + ".json");
-            File targetAdv = new File(advancementsDir, targetUUIDString + ".json");
-
-            if (sourceAdv.exists()) {
-                // Asegurar que la carpeta advancements exista
-                advancementsDir.mkdirs();
-                Files.copy(sourceAdv.toPath(), targetAdv.toPath(), StandardCopyOption.REPLACE_EXISTING);
-            }
-            
-            DirectAuth.LOGGER.info("Migrated data for {} from {} to {}", player.getName().getString(), currentUUID, targetUUIDString);
             return true;
 
-        } catch (IOException e) {
-            DirectAuth.LOGGER.error("Failed to migrate player data", e);
+        } catch (Exception e) {
+            DirectAuth.LOGGER.error("CRITICAL ERROR during migration for {}", player.getName().getString(), e);
             return false;
         }
     }
