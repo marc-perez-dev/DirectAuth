@@ -26,6 +26,9 @@ public class ConnectionHandler {
     @SubscribeEvent
     public void onPlayerLogin(PlayerEvent.PlayerLoggedInEvent event) {
         if (event.getEntity() instanceof ServerPlayer player) {
+            // Registrar tiempo de entrada
+            DirectAuth.getLoginManager().recordJoin(player);
+
             String username = player.getGameProfile().getName();
             UserData userData = DirectAuth.getDatabase().getUser(username);
             

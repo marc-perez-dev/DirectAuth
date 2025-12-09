@@ -18,6 +18,9 @@ public class LoginManager {
     
     // Contador de intentos fallidos (UUID -> contador)
     private final Map<UUID, Integer> failedAttempts = new ConcurrentHashMap<>();
+
+    // Mapa para guardar el momento exacto de la conexión
+    private final Map<UUID, Long> connectionTimes = new ConcurrentHashMap<>();
     
     private static final long COOLDOWN_MS = 3000; // 3 segundos entre intentos
     private static final int MAX_ATTEMPTS = 5; // Máximo 5 intentos antes de kick
@@ -46,6 +49,21 @@ public class LoginManager {
         authenticatedPlayers.remove(player.getUUID());
         loginAttempts.remove(player.getUUID());
         failedAttempts.remove(player.getUUID());
+        connectionTimes.remove(player.getUUID());
+    }
+
+    public void recordJoin(ServerPlayer player) {
+        connectionTimes.put(player.getUUID(), System.currentTimeMillis());
+    }
+
+    public boolean hasTimedOut(ServerPlayer player) {
+        if (isAuthenticated(player)) return false; // Si ya está dentro, no hay timeout
+
+        Long joinTime = connectionTimes.get(player.getUUID());
+        if (joinTime == null) return false; // Por seguridad
+
+        long elapsedSeconds = (System.currentTimeMillis() - joinTime) / 1000;
+        return elapsedSeconds >= com.marcp.directauth.DirectAuth.getConfig().loginTimeout;
     }
     
     public boolean canAttemptLogin(ServerPlayer player) {

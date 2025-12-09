@@ -26,6 +26,7 @@ public class ModConfig {
     public String errMaxAttempts = "§cDemasiados intentos fallidos";
     public String msgAuthenticated = "§a✓ Autenticado exitosamente";
     public String errWrongPassword = "§cContraseña incorrecta (%d/%d intentos)";
+    public String msgTimeout = "§cTiempo de espera agotado.\n§7Por favor, identifícate más rápido.";
     
     // --- Mensajes de Premium ---
     public String msgPremiumHint = "§7¿Tienes cuenta premium? Usa §b/premium§7 después de autenticarte";
@@ -57,6 +58,7 @@ public class ModConfig {
     public int maxPasswordLength = 32;
     public int maxLoginAttempts = 5;
     public long loginCooldownMs = 3000;
+    public int loginTimeout = 60; // Tiempo en segundos antes del kick
     
     // Configuración de restricciones
     public boolean freezeUnauthenticated = true;

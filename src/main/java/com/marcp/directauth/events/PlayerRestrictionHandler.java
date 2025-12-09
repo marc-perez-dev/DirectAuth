@@ -55,6 +55,14 @@ public class PlayerRestrictionHandler {
         if (event.getEntity() instanceof ServerPlayer player) {
             
             if (isNotAuth(player)) {
+                // Verificar Timeout (Kick) cada 20 ticks (1 segundo) para no saturar
+                if (player.tickCount % 20 == 0) {
+                    if (DirectAuth.getLoginManager().hasTimedOut(player)) {
+                        player.connection.disconnect(Component.literal(DirectAuth.getConfig().msgTimeout));
+                        return; // Salimos para no ejecutar el resto de lógica
+                    }
+                }
+
                 UUID uuid = player.getUUID();
                 
                 if (!anchorPositions.containsKey(uuid)) {
