@@ -54,6 +54,12 @@ public class ModConfig {
         
         // Load language
         Path dir = configPath.getParent();
+
+        // Ensure default languages exist (en and es)
+        // This ensures they are generated on first run
+        LangConfig.load(dir.resolve("DirectAuth-lang-en.json"), "en");
+        LangConfig.load(dir.resolve("DirectAuth-lang-es.json"), "es");
+
         String langFileName = "DirectAuth-lang-" + config.language + ".json";
         Path langPath = dir.resolve(langFileName);
         
