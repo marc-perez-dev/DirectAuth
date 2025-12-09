@@ -74,8 +74,10 @@ public class ConnectionHandler {
         
         // Si NO está autenticado (usuario nuevo o login pendiente), ocultar coordenadas
         if (!isAuthenticated) {
-            // Guardar posición real
-            DirectAuth.getPositionManager().savePosition(player);
+            // [CAMBIO CLAVE] Solo guardar posición si está vivo y con salud
+            if (!player.isDeadOrDying() && player.getHealth() > 0) {
+                DirectAuth.getPositionManager().savePosition(player);
+            }
             
             // Teletransportar al Spawn del Overworld
             ServerLevel overworld = player.getServer().overworld();

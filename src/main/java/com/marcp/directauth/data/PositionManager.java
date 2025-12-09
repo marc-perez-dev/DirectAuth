@@ -55,12 +55,14 @@ public class PositionManager {
         }
     }
     
-    public void restorePosition(ServerPlayer player) {
+    public boolean restorePosition(ServerPlayer player) {
         StoredLocation loc = positions.remove(player.getUUID());
         if (loc != null) {
             loc.teleportPlayer(player);
             saveDatabase();
+            return true;
         }
+        return false;
     }
     
     public boolean hasPosition(UUID uuid) {
