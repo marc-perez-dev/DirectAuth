@@ -1,5 +1,8 @@
 package com.marcp.directauth.data;
 
+import com.mojang.logging.LogUtils;
+import org.slf4j.Logger;
+
 import java.nio.file.Path;
 import java.sql.*;
 import java.io.File;
@@ -9,9 +12,17 @@ import com.google.gson.Gson;
 import com.google.gson.reflect.TypeToken;
 import java.util.Map;
 
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+
+import com.marcp.directauth.data.UserData; // Explicit import for UserData
+
 public class DatabaseManager {
+    private static final Logger LOGGER = LogUtils.getLogger();
     private final String connectionString;
     private Connection connection;
+    private final ExecutorService dbExecutor = Executors.newSingleThreadExecutor();
 
     public DatabaseManager(Path worldPath) {
         // Guardamos en world/serverconfig/directauth.db
@@ -51,7 +62,44 @@ public class DatabaseManager {
         }
     }
 
+    public void close() {
+        dbExecutor.shutdown();
+        try {
+            if (connection != null && !connection.isClosed()) {
+                connection.close();
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+    }
+
     // --- MÉTODOS CRUD ---
+
+    public CompletableFuture<UserData> getUserAsync(String username) {
+        return CompletableFuture.supplyAsync(() -> {
+            return getUser(username);
+        }, dbExecutor);
+    }
+
+    public void updateUserAsync(String username, UserData data) {
+        dbExecutor.submit(() -> {
+            try {
+                updateUser(username, data);
+            } catch (Exception e) {
+                LOGGER.error("Error updating user {}: {}", username, e.getMessage());
+            }
+        });
+    }
+
+    public void createUserAsync(String username, String passwordHash) {
+        dbExecutor.submit(() -> {
+            try {
+                createUser(username, passwordHash);
+            } catch (Exception e) {
+                LOGGER.error("Error creating user {}: {}", username, e.getMessage());
+            }
+        });
+    }
 
     public UserData getUser(String username) {
         String sql = "SELECT * FROM users WHERE username = ?";

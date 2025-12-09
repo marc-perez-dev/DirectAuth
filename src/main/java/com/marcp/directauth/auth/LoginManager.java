@@ -8,6 +8,7 @@ import java.security.SecureRandom;
 import java.security.spec.InvalidKeySpecException;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import com.marcp.directauth.data.UserData; // Asegúrate de importar esto
 
 public class LoginManager {
     // Jugadores actualmente autenticados (UUID offline -> true)
@@ -21,6 +22,9 @@ public class LoginManager {
 
     // Mapa para guardar el momento exacto de la conexión
     private final Map<UUID, Long> connectionTimes = new ConcurrentHashMap<>();
+
+    // NUEVO: Caché temporal para pre-carga (Usuario -> Datos)
+    private final Map<String, UserData> preLoginCache = new ConcurrentHashMap<>();
     
     private static final long COOLDOWN_MS = 3000; // 3 segundos entre intentos
     private static final int MAX_ATTEMPTS = 5; // Máximo 5 intentos antes de kick
@@ -50,6 +54,7 @@ public class LoginManager {
         loginAttempts.remove(player.getUUID());
         failedAttempts.remove(player.getUUID());
         connectionTimes.remove(player.getUUID());
+        preLoginCache.remove(player.getGameProfile().getName().toLowerCase()); // Limpiar también la caché al desconectar
     }
 
     public void recordJoin(ServerPlayer player) {
@@ -93,6 +98,30 @@ public class LoginManager {
     
     public boolean hasExceededMaxAttempts(ServerPlayer player) {
         return getFailedAttempts(player) >= MAX_ATTEMPTS;
+    }
+
+    // MÉTODOS PARA LA PRE-CARGA
+    public void addPreLoadedData(String username, UserData data) {
+        // Guardamos el dato (incluso si es null, para saber que ya buscamos y no existe)
+        if (username != null) {
+            preLoginCache.put(username.toLowerCase(), data != null ? data : new UserData("NULL_MARKER", ""));
+        }
+    }
+
+    public UserData getAndRemovePreLoadedData(String username) {
+        if (username == null) return null;
+        UserData data = preLoginCache.remove(username.toLowerCase());
+        
+        // Si es el marcador de "no existe", devolvemos null real
+        if (data != null && "NULL_MARKER".equals(data.getUsername())) {
+            return null;
+        }
+        return data;
+    }
+
+    public boolean isPreLoaded(String username) {
+        if (username == null) return false;
+        return preLoginCache.containsKey(username.toLowerCase());
     }
     
     // --- Hashing con PBKDF2 (Nativo Java) ---

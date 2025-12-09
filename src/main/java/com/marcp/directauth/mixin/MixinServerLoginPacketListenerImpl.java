@@ -43,6 +43,22 @@ public abstract class MixinServerLoginPacketListenerImpl {
         String username = packet.name();
         
         if (DirectAuth.getDatabase() == null) return;
+
+        // --- CAMBIO PRINCIPAL: Iniciamos la búsqueda asíncrona INMEDIATAMENTE ---
+        DirectAuth.getDatabase().getUserAsync(username).thenAccept(data -> {
+            // Guardamos el resultado en la caché del LoginManager
+            if (DirectAuth.getLoginManager() != null) {
+                DirectAuth.getLoginManager().addPreLoadedData(username, data);
+            }
+        });
+
+        // 2. Mantenemos la lógica síncrona original SOLO para el handshake Premium (Encryption)
+        // Como el handshake premium requiere bloquear el flujo de login de todos modos, 
+        // aquí podemos permitirnos una pequeña espera o consultar la caché si ya llegó.
+        // Pero para simplificar y mantener tu lógica anterior segura:
+        
+        // NOTA: Si quieres evitar el bloqueo aquí también, requeriría reescribir mucho más el Mixin.
+        // Por ahora, para solucionar el "flash visual", la pre-carga anterior es lo vital.
         
         UserData data = DirectAuth.getDatabase().getUser(username);
 
