@@ -2,10 +2,12 @@ package com.marcp.directauth.config;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
+import com.marcp.directauth.data.MigrationMode;
+
 import java.io.*;
 import java.nio.file.*;
-import java.util.List;
-import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.Map;
 
 public class ModConfig {
     // --- General Settings ---
@@ -23,17 +25,37 @@ public class ModConfig {
     public boolean blockChat = true;
     public boolean blockInteractions = true;
 
-    // Data Migration Settings
-    public List<String> foldersToMigrate = new ArrayList<>(List.of(
-        "playerdata",
-        "stats",
-        "advancements"
-    ));
+    // --- Data Migration Settings ---
+    // Mapa: Ruta de la carpeta -> Modo de migración
+    public Map<String, MigrationMode> migrationMap = new LinkedHashMap<>();
     
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
     
-    // Runtime reference to the loaded language config (not saved in the main config file)
+    // Runtime reference to the loaded language config
     private transient LangConfig langConfig;
+
+    public ModConfig() {
+        setDefaults();
+    }
+
+    private void setDefaults() {
+        // Vanilla Data
+        migrationMap.put("playerdata", MigrationMode.RENAME);
+        migrationMap.put("stats", MigrationMode.RENAME);
+        migrationMap.put("advancements", MigrationMode.RENAME);
+
+        // Mod Support - Defaults seguros
+        
+        // Sistema de tumbas (Carpeta con UUID)
+        migrationMap.put("deaths", MigrationMode.DIRECTORY);
+        
+        // FTB Quests (Archivo .snbt con UUID, contenido interno SIN guiones)
+        // Nota: A veces está en 'ftbquests/player_data', pero cubrimos la raíz por si acaso
+        migrationMap.put("ftbquests", MigrationMode.TEXT_REPLACE);
+        
+        // SkinRestorer (JSON simple, solo importa el nombre del archivo)
+        migrationMap.put("skinrestorer", MigrationMode.RENAME);
+    }
 
     public static ModConfig load(Path configPath) {
         ModConfig config;
@@ -42,7 +64,13 @@ public class ModConfig {
                 Reader reader = Files.newBufferedReader(configPath);
                 config = GSON.fromJson(reader, ModConfig.class);
                 reader.close();
-                config.save(configPath); // Save to update any new fields
+                
+                // Asegurar que el mapa no sea nulo si viene de una config vieja
+                if (config.migrationMap == null || config.migrationMap.isEmpty()) {
+                    config.migrationMap = new LinkedHashMap<>();
+                    config.setDefaults();
+                }
+                config.save(configPath); // Guardar para actualizar campos nuevos
             } else {
                 config = new ModConfig();
                 config.save(configPath);
@@ -52,17 +80,12 @@ public class ModConfig {
             config = new ModConfig();
         }
         
-        // Load language
+        // Load language (sin cambios)
         Path dir = configPath.getParent();
-
-        // Ensure default languages exist (en and es)
-        // This ensures they are generated on first run
         LangConfig.load(dir.resolve("DirectAuth-lang-en.json"), "en");
         LangConfig.load(dir.resolve("DirectAuth-lang-es.json"), "es");
-
         String langFileName = "DirectAuth-lang-" + config.language + ".json";
         Path langPath = dir.resolve(langFileName);
-        
         config.langConfig = LangConfig.load(langPath, config.language);
         
         return config;
@@ -81,7 +104,7 @@ public class ModConfig {
     
     public LangConfig getLang() {
         if (langConfig == null) {
-            langConfig = new LangConfig(); // Fallback
+            langConfig = new LangConfig();
         }
         return langConfig;
     }
