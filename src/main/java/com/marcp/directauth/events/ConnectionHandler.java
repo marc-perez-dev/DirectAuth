@@ -71,6 +71,14 @@ public class ConnectionHandler {
                 return;
             }
         }
+
+        if (!isAuthenticated) {
+            // INTENTO DE RESTAURACIÓN DE SESIÓN
+            if (DirectAuth.getLoginManager().tryRestoreSession(player)) {
+                player.sendSystemMessage(Component.literal(DirectAuth.getConfig().getLang().msgSessionRestored));
+                isAuthenticated = true;
+            }
+        }
         
         // Si NO está autenticado (usuario nuevo o login pendiente), ocultar coordenadas
         if (!isAuthenticated) {
@@ -96,7 +104,14 @@ public class ConnectionHandler {
     @SubscribeEvent
     public void onPlayerLogout(PlayerEvent.PlayerLoggedOutEvent event) {
         if (event.getEntity() instanceof ServerPlayer player) {
-            DirectAuth.getLoginManager().removePlayer(player);
+            // SI estaba autenticado, guardamos la sesión temporal
+            if (DirectAuth.getLoginManager().isAuthenticated(player)) {
+                DirectAuth.getLoginManager().pauseSession(player);
+            } else {
+                // Si no estaba logueado, limpieza normal
+                DirectAuth.getLoginManager().removePlayer(player);
+            }
+
             PlayerRestrictionHandler.removeAnchor(player);
             // Nota: No borramos la posición guardada aquí. Se mantiene hasta que se autentique correctamente.
         }

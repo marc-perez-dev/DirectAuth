@@ -7,6 +7,7 @@ import com.marcp.directauth.commands.RegisterCommand;
 import com.marcp.directauth.commands.ChangePasswordCommand;
 import com.marcp.directauth.commands.DirectAuthCommand;
 import com.marcp.directauth.commands.UnregisterCommand;
+import com.marcp.directauth.commands.LogoutCommand;
 import com.marcp.directauth.config.ModConfig;
 import com.marcp.directauth.data.DatabaseManager;
 import com.marcp.directauth.data.PositionManager;
@@ -53,6 +54,7 @@ public class DirectAuth {
         ChangePasswordCommand.register(event.getDispatcher());
         UnregisterCommand.register(event.getDispatcher());
         DirectAuthCommand.register(event.getDispatcher()); // Reemplaza a PremiumAdminCommand
+        LogoutCommand.register(event.getDispatcher());
     }
     
     public static void initDatabase(Path worldPath) {

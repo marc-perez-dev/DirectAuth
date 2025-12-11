@@ -63,6 +63,10 @@ public class LangConfig {
     public String errNoPendingAction = "§cNo tienes ninguna acción pendiente de confirmar.";
     public String msgActionExpired = "§cLa solicitud de confirmación ha caducado.";
     
+    // --- Session Messages ---
+    public String msgSessionRestored = "§aWelcome back. Session restored automatically.";
+    public String msgLogoutSuccess = "§cLogged out successfully.";
+
     // --- Admin Management ---
     public String msgAdminResetSuccess = "§aContraseña restablecida para el usuario %s.";
     public String msgAdminUnregisterSuccess = "§aEl usuario %s ha sido eliminado de la base de datos.";
@@ -150,6 +154,10 @@ public class LangConfig {
             
             msgAdminResetSuccess = "§aContraseña restablecida para el usuario %s.";
             msgAdminUnregisterSuccess = "§aEl usuario %s ha sido eliminado de la base de datos.";
+            
+            // --- Session Messages ---
+            msgSessionRestored = "§aBienvenido de nuevo. Sesión restaurada automáticamente.";
+            msgLogoutSuccess = "§cHas cerrado sesión correctamente.";
         }
     }
 

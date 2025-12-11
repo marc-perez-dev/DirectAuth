@@ -25,6 +25,9 @@ public class LoginManager {
 
     // NUEVO: Caché temporal para pre-carga (Usuario -> Datos)
     private final Map<String, UserData> preLoginCache = new ConcurrentHashMap<>();
+
+    // NUEVO: Mapa para sesiones en periodo de gracia
+    private final Map<UUID, GraceSession> graceSessions = new ConcurrentHashMap<>();
     
     private static final long COOLDOWN_MS = 3000; // 3 segundos entre intentos
     private static final int MAX_ATTEMPTS = 5; // Máximo 5 intentos antes de kick
@@ -56,6 +59,64 @@ public class LoginManager {
         connectionTimes.remove(player.getUUID());
         preLoginCache.remove(player.getGameProfile().getName().toLowerCase()); // Limpiar también la caché al desconectar
     }
+
+    /**
+     * Se llama cuando el jugador se desconecta.
+     * Guarda la IP y la hora de expiración en RAM.
+     */
+    public void pauseSession(ServerPlayer player) {
+        // 1. Quitamos del set de autenticados activos
+        setAuthenticated(player, false); 
+        
+        // 2. Calculamos expiración
+        long durationSeconds = com.marcp.directauth.DirectAuth.getConfig().sessionGracePeriod;
+        if (durationSeconds <= 0) return; // Si está desactivado (0), no guardamos nada
+
+        long expiryTime = System.currentTimeMillis() + (durationSeconds * 1000);
+        String ip = player.getIpAddress(); // NeoForge suele dar la IP sin puerto aquí
+
+        // 3. Guardamos en el "Limbo"
+        graceSessions.put(player.getUUID(), new GraceSession(ip, expiryTime));
+    }
+
+    /**
+     * Se llama cuando el jugador entra.
+     * Intenta recuperar la sesión si la IP coincide y hay tiempo.
+     */
+    public boolean tryRestoreSession(ServerPlayer player) {
+        UUID uuid = player.getUUID();
+        GraceSession session = graceSessions.get(uuid);
+
+        // Si no hay sesión guardada, nada que hacer
+        if (session == null) return false;
+
+        // Limpieza: Ya la hemos recuperado o vamos a descartarla, así que la borramos del mapa
+        graceSessions.remove(uuid);
+
+        // 1. Chequeo de Tiempo
+        if (System.currentTimeMillis() > session.expirationTime) {
+            return false; // Caducó
+        }
+
+        // 2. Chequeo de IP (CRÍTICO DE SEGURIDAD)
+        String currentIp = player.getIpAddress();
+        if (!session.ipAddress.equals(currentIp)) {
+            // Log de advertencia opcional para admins
+            com.marcp.directauth.DirectAuth.LOGGER.warn("Intento de sesión inválida (IP distinta) para {}", player.getName().getString());
+            return false; 
+        }
+
+        // 3. Restaurar
+        setAuthenticated(player, true);
+        return true;
+    }
+
+    public void invalidateSession(ServerPlayer player) {
+        graceSessions.remove(player.getUUID());
+    }
+
+    // Clase interna simple para guardar los datos
+    private record GraceSession(String ipAddress, long expirationTime) {}
 
     public void recordJoin(ServerPlayer player) {
         connectionTimes.put(player.getUUID(), System.currentTimeMillis());

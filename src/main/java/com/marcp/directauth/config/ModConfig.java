@@ -13,6 +13,10 @@ public class ModConfig {
     // --- General Settings ---
     public String language = "en";
 
+    // --- Session Settings ---
+    // Tiempo en segundos para mantener la sesión tras desconexión (Default: 600s = 10 min)
+    public int sessionGracePeriod = 600;
+
     // Security Settings
     public int minPasswordLength = 4;
     public int maxPasswordLength = 32;
