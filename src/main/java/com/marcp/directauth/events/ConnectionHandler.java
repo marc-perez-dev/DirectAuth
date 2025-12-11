@@ -22,12 +22,20 @@ public class ConnectionHandler {
         DirectAuth.initDatabase(worldRoot);
         // Inicializar configuración en world/serverconfig/DirectAuth-config.json
         DirectAuth.initConfig(worldRoot.resolve("serverconfig").resolve("DirectAuth-config.json"));
+        
+        // Inicializar el Scheduler del LoginManager con la configuración cargada
+        DirectAuth.getLoginManager().init(DirectAuth.getConfig().sessionCleanupInterval);
     }
 
     @SubscribeEvent
     public void onServerStopping(ServerStoppingEvent event) {
         if (DirectAuth.getDatabase() != null) {
             DirectAuth.getDatabase().close();
+        }
+        
+        // 2. NUEVO: Detener el Scheduler de sesiones
+        if (DirectAuth.getLoginManager() != null) {
+            DirectAuth.getLoginManager().shutdown();
         }
     }
     

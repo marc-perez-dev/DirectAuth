@@ -8,6 +8,9 @@ import java.security.SecureRandom;
 import java.security.spec.InvalidKeySpecException;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 import com.marcp.directauth.data.UserData; // Asegúrate de importar esto
 
 public class LoginManager {
@@ -32,6 +35,24 @@ public class LoginManager {
 
     // NUEVO: Mapa para sesiones en periodo de gracia
     private final Map<UUID, GraceSession> graceSessions = new ConcurrentHashMap<>();
+
+    // 1. Definimos el Scheduler (1 hilo es suficiente para mantenimiento)
+    private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();
+
+    public LoginManager() {
+        // Constructor vacío, la inicialización se hace en init()
+    }
+    
+    /**
+     * Inicializa la tarea de limpieza con el intervalo configurado.
+     * Debe llamarse DESPUÉS de cargar la configuración.
+     */
+    public void init(int cleanupIntervalMinutes) {
+        if (cleanupIntervalMinutes <= 0) cleanupIntervalMinutes = 10; // Fallback seguro
+        
+        // Ejecutar cada X minutos, con un delay inicial igual al intervalo
+        scheduler.scheduleAtFixedRate(this::cleanupExpiredSessions, cleanupIntervalMinutes, cleanupIntervalMinutes, TimeUnit.MINUTES);
+    }
     
     private static final long COOLDOWN_MS = 3000; // 3 segundos entre intentos
     private static final int MAX_ATTEMPTS = 5; // Máximo 5 intentos antes de kick
@@ -41,6 +62,38 @@ public class LoginManager {
     private static final int KEY_LENGTH = 256;
     private static final String ALGORITHM = "PBKDF2WithHmacSHA256";
     private static final SecureRandom RANDOM = new SecureRandom();
+
+    /**
+     * Tarea de mantenimiento: Elimina sesiones caducadas de la memoria.
+     */
+    private void cleanupExpiredSessions() {
+        long now = System.currentTimeMillis();
+        
+        // graceSessions es un ConcurrentHashMap, así que podemos iterar y borrar con seguridad
+        // usando removeIf (disponible desde Java 8)
+        graceSessions.entrySet().removeIf(entry -> {
+            long expirationTime = entry.getValue().expirationTime();
+            // Si el tiempo actual es mayor al de expiración, borramos
+            return now > expirationTime;
+        });
+        
+        // Opcional: Log de depuración si quieres ver cuándo ocurre (quita esto en producción para evitar spam)
+        // com.marcp.directauth.DirectAuth.LOGGER.debug("Limpieza de sesiones completada.");
+    }
+
+    /**
+     * Importante: Método para detener el hilo cuando el servidor se apaga.
+     */
+    public void shutdown() {
+        scheduler.shutdown();
+        try {
+            if (!scheduler.awaitTermination(1, TimeUnit.SECONDS)) {
+                scheduler.shutdownNow();
+            }
+        } catch (InterruptedException e) {
+            scheduler.shutdownNow();
+        }
+    }
 
     public boolean isAuthenticated(ServerPlayer player) {
         return authenticatedPlayers.contains(player.getUUID());

@@ -16,6 +16,9 @@ public class ModConfig {
     // --- Session Settings ---
     // Tiempo en segundos para mantener la sesión tras desconexión (Default: 600s = 10 min)
     public int sessionGracePeriod = 600;
+    
+    // Intervalo en minutos para limpiar sesiones caducadas de la memoria (Default: 10 min)
+    public int sessionCleanupInterval = 10;
 
     // Security Settings
     public int minPasswordLength = 4;
