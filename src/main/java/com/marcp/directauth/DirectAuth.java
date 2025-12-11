@@ -2,9 +2,11 @@ package com.marcp.directauth;
 
 import com.marcp.directauth.auth.LoginManager;
 import com.marcp.directauth.commands.LoginCommand;
-import com.marcp.directauth.commands.PremiumAdminCommand;
 import com.marcp.directauth.commands.PremiumCommand;
 import com.marcp.directauth.commands.RegisterCommand;
+import com.marcp.directauth.commands.ChangePasswordCommand;
+import com.marcp.directauth.commands.DirectAuthCommand;
+import com.marcp.directauth.commands.UnregisterCommand;
 import com.marcp.directauth.config.ModConfig;
 import com.marcp.directauth.data.DatabaseManager;
 import com.marcp.directauth.data.PositionManager;
@@ -46,7 +48,11 @@ public class DirectAuth {
         RegisterCommand.register(event.getDispatcher());
         LoginCommand.register(event.getDispatcher());
         PremiumCommand.register(event.getDispatcher());
-        PremiumAdminCommand.register(event.getDispatcher());
+        
+        // Nuevos Comandos
+        ChangePasswordCommand.register(event.getDispatcher());
+        UnregisterCommand.register(event.getDispatcher());
+        DirectAuthCommand.register(event.getDispatcher()); // Reemplaza a PremiumAdminCommand
     }
     
     public static void initDatabase(Path worldPath) {

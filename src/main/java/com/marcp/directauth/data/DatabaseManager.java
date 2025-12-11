@@ -156,6 +156,16 @@ public class DatabaseManager {
         }
     }
 
+    public void deleteUser(String username) {
+        String sql = "DELETE FROM users WHERE username = ?";
+        try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
+            pstmt.setString(1, username.toLowerCase());
+            pstmt.executeUpdate();
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+    }
+
     // --- MIGRACIÓN (Solo se ejecuta una vez) ---
     private void migrateFromJson(Path jsonPath) {
         System.out.println("DirectAuth: Migrando base de datos JSON a SQLite...");

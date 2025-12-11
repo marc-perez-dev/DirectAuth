@@ -55,6 +55,18 @@ public class LangConfig {
     public String msgNoDrop = "§cYou cannot drop items before authenticating.";
     public String msgUseCommands = "§cPlease use commands to authenticate first.";
     
+    // --- Account Management & Confirmation ---
+    public String msgConfirmRequest = "§e⚠️ ¡Confirmación Requerida!\n§7Estás a punto de realizar una acción delicada.\n§7Escribe §6/directauth confirm§7 para proceder.";
+    public String msgPasswordChanged = "§a✓ Contraseña actualizada correctamente.";
+    public String msgAccountDeleted = "§cTu cuenta ha sido eliminada.";
+    public String errOldPasswordWrong = "§cLa contraseña antigua es incorrecta.";
+    public String errNoPendingAction = "§cNo tienes ninguna acción pendiente de confirmar.";
+    public String msgActionExpired = "§cLa solicitud de confirmación ha caducado.";
+    
+    // --- Admin Management ---
+    public String msgAdminResetSuccess = "§aContraseña restablecida para el usuario %s.";
+    public String msgAdminUnregisterSuccess = "§aEl usuario %s ha sido eliminado de la base de datos.";
+
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
 
     public static LangConfig load(Path langPath, String language) {
@@ -128,6 +140,16 @@ public class LangConfig {
             // --- Restriction Messages ---
             msgNoDrop = "§cNo puedes soltar objetos antes de autenticarte.";
             msgUseCommands = "§cPor favor usa los comandos para autenticarte primero.";
+            // --- Nuevas Traducciones ---
+            msgConfirmRequest = "§e⚠️ ¡Confirmación Requerida!\n§7Estás a punto de realizar una acción delicada.\n§7Escribe §6/directauth confirm§7 para proceder.";
+            msgPasswordChanged = "§a✓ Contraseña actualizada correctamente.";
+            msgAccountDeleted = "§cTu cuenta ha sido eliminada.";
+            errOldPasswordWrong = "§cLa contraseña antigua es incorrecta.";
+            errNoPendingAction = "§cNo tienes ninguna acción pendiente de confirmar.";
+            msgActionExpired = "§cLa solicitud de confirmación ha caducado.";
+            
+            msgAdminResetSuccess = "§aContraseña restablecida para el usuario %s.";
+            msgAdminUnregisterSuccess = "§aEl usuario %s ha sido eliminado de la base de datos.";
         }
     }
 
