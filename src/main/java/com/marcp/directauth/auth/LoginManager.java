@@ -23,6 +23,10 @@ public class LoginManager {
     // Mapa para guardar el momento exacto de la conexión
     private final Map<UUID, Long> connectionTimes = new ConcurrentHashMap<>();
 
+    public long getConnectionTime(ServerPlayer player) {
+        return connectionTimes.getOrDefault(player.getUUID(), System.currentTimeMillis());
+    }
+
     // NUEVO: Caché temporal para pre-carga (Usuario -> Datos)
     private final Map<String, UserData> preLoginCache = new ConcurrentHashMap<>();
 

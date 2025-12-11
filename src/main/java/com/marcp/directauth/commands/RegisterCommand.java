@@ -29,6 +29,25 @@ public class RegisterCommand {
         }
         
         String username = player.getGameProfile().getName();
+        String playerIp = player.getIpAddress();
+
+        // --- 1. CHECK ANTI-BOT: RETRASO TEMPORAL ---
+        long joinTime = DirectAuth.getLoginManager().getConnectionTime(player);
+        long secondsAlive = (System.currentTimeMillis() - joinTime) / 1000;
+        int requiredDelay = DirectAuth.getConfig().registrationDelay;
+
+        if (secondsAlive < requiredDelay) {
+            player.sendSystemMessage(Component.literal("§cPlease wait a moment before registering."));
+            return 0;
+        }
+
+        // --- 2. CHECK ANTI-BOT: LÍMITE DE IP ---
+        int accountsOnIp = DirectAuth.getDatabase().countAccountsByIP(playerIp);
+        
+        if (accountsOnIp >= DirectAuth.getConfig().maxAccountsPerIP) {
+            player.sendSystemMessage(Component.literal("§cRegistration limit reached for this IP address."));
+            return 0;
+        }
         
         // Verificar si ya está registrado
         if (DirectAuth.getDatabase().userExists(username)) {
@@ -51,7 +70,7 @@ public class RegisterCommand {
         
         // Crear usuario
         String hash = LoginManager.hashPassword(password);
-        DirectAuth.getDatabase().createUser(username, hash);
+        DirectAuth.getDatabase().createUserAsync(username, hash, playerIp);
         
         // Autenticar automáticamente
         DirectAuth.getLoginManager().setAuthenticated(player, true);

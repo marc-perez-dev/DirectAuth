@@ -24,6 +24,10 @@ public class ModConfig {
     public long loginCooldownMs = 3000;
     public int loginTimeout = 60; // Time in seconds before kick
     
+    // Anti-Bot Settings
+    public int registrationDelay = 1; // 1 second wait before registering
+    public int maxAccountsPerIP = 5;  // Max 5 accounts per IP
+    
     // Restriction Settings
     public boolean freezeUnauthenticated = true;
     public boolean blockChat = true;

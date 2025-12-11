@@ -52,8 +52,19 @@ public class DatabaseManager {
                         "username TEXT PRIMARY KEY, " +
                         "passwordHash TEXT NOT NULL, " +
                         "isPremium INTEGER DEFAULT 0, " +
-                        "onlineUUID TEXT" +
+                        "onlineUUID TEXT, " +
+                        "registrationIp TEXT" + // Nueva columna
                         ");");
+                
+                // MIGRACIÓN PARA SERVIDORES ANTIGUOS
+                // Intentamos añadir la columna 'registrationIp' a la tabla existente.
+                // Si la columna ya existe, SQLite lanzará un error que ignoraremos de forma segura.
+                try {
+                    stmt.execute("ALTER TABLE users ADD COLUMN registrationIp TEXT;");
+                    LOGGER.info("DirectAuth: Base de datos actualizada (Columna IP añadida).");
+                } catch (SQLException ignored) {
+                    // La columna ya existe, no hacemos nada.
+                }
             }
         } catch (ClassNotFoundException e) {
             throw new RuntimeException("CRITICAL: No se encontró el driver de SQLite. Asegúrate de que la librería está incluida en el mod.", e);
@@ -71,6 +82,21 @@ public class DatabaseManager {
         } catch (SQLException e) {
             e.printStackTrace();
         }
+    }
+
+    public int countAccountsByIP(String ip) {
+        if (ip == null) return 0;
+        String sql = "SELECT COUNT(*) FROM users WHERE registrationIp = ?";
+        try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
+            pstmt.setString(1, ip);
+            ResultSet rs = pstmt.executeQuery();
+            if (rs.next()) {
+                return rs.getInt(1);
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+        return 0;
     }
 
     // --- MÉTODOS CRUD ---
@@ -91,10 +117,10 @@ public class DatabaseManager {
         });
     }
 
-    public void createUserAsync(String username, String passwordHash) {
+    public void createUserAsync(String username, String passwordHash, String ip) {
         dbExecutor.submit(() -> {
             try {
-                createUser(username, passwordHash);
+                createUser(username, passwordHash, ip);
             } catch (Exception e) {
                 LOGGER.error("Error creating user {}: {}", username, e.getMessage());
             }
@@ -132,11 +158,12 @@ public class DatabaseManager {
         return false;
     }
 
-    public void createUser(String username, String passwordHash) {
-        String sql = "INSERT INTO users(username, passwordHash, isPremium, onlineUUID) VALUES(?,?,0,NULL)";
+    public void createUser(String username, String passwordHash, String ip) {
+        String sql = "INSERT INTO users(username, passwordHash, isPremium, onlineUUID, registrationIp) VALUES(?,?,0,NULL,?)";
         try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
             pstmt.setString(1, username.toLowerCase());
             pstmt.setString(2, passwordHash);
+            pstmt.setString(3, ip);
             pstmt.executeUpdate();
         } catch (SQLException e) {
             e.printStackTrace();
