@@ -32,7 +32,7 @@ Authoritative values live in `gradle.properties`; the table below is a quick ref
 | Persistence | SQLite via `org.xerial:sqlite-jdbc:3.46.0.0` (jar-in-jar) |
 | Gradle wrapper | 9.2.0 |
 
-Mixins are enabled (`directauth.mixins.json`). No access transformers, no coremods.
+Mixins are enabled (`directauth.mixins.json`). One access transformer (`META-INF/accesstransformer.cfg`) makes `ServerLoginPacketListenerImpl$State` public for the login mixin. No coremods.
 
 ---
 
@@ -47,12 +47,12 @@ DirectAuth/
 │   ├── main/
 │   │   ├── java/com/marcp/directauth/
 │   │   │   ├── DirectAuth.java       # @Mod entry — registers handlers, exposes singletons
-│   │   │   ├── auth/                 # LoginManager, MojangAPI, ConfirmationManager
+│   │   │   ├── auth/                 # LoginManager, AuthTasks, AccountModeSwitch, MojangAPI, ConfirmationManager
 │   │   │   ├── commands/             # Brigadier command classes
 │   │   │   ├── config/               # ModConfig, LangConfig (Gson JSON)
 │   │   │   ├── data/                 # DatabaseManager (SQLite), PositionManager, MigrationManager, UserData, StoredLocation
 │   │   │   ├── events/               # ConnectionHandler, PlayerRestrictionHandler
-│   │   │   └── mixin/                # MixinServerLoginPacketListenerImpl, PlayerListAccessor
+│   │   │   └── mixin/                # login handshake, packet restrictions, respawn, effects, PlayerListAccessor
 │   │   ├── resources/
 │   │   │   ├── META-INF/             # mods.toml is generated from templates/
 │   │   │   ├── directauth.mixins.json
@@ -75,13 +75,16 @@ DirectAuth/
 - `@Mod("directauth")` constructor receives the mod event bus.
 - Registers `ConnectionHandler` and `PlayerRestrictionHandler` on `NeoForge.EVENT_BUS`, and registers commands via `RegisterCommandsEvent`.
 - Holds static singletons exposed via getters: `LoginManager`, `DatabaseManager`, `PositionManager`, `ModConfig`. **All cross-package access goes through these getters** — there is no DI container.
-- `initDatabase(Path)` and `initConfig(Path)` are called by `ConnectionHandler#onServerStarted`, *not* in the constructor (they need the world path).
+- `initDatabase(Path)` and `initConfig(Path)` are called by `ConnectionHandler#onServerStarted`, *not* in the constructor (they need the world path). `initConfig` returns `false` (keeping the previous config, or defaults on first start) if the JSON is unreadable; it never overwrites a malformed file.
+- **One `LoginManager` per server instance**: `resetLoginManager()` runs on `ServerStartedEvent`, and `ServerStoppedEvent` shuts it down and closes the DB (`closeDatabase()`). Singleplayer starts several servers in one JVM, so never keep auth state in statics that survive a stop.
 
 ### 4.2 `auth/`
-- **`LoginManager`** — central authentication state. Thread-safe (`ConcurrentHashMap`). Holds `authenticatedPlayers`, `failedAttempts`, `loginAttempts` (cooldown), `connectionTimes` (login timeout), `preLoginCache` (mixin-populated), `graceSessions` (IP-locked re-login). Runs a `ScheduledExecutorService` for grace-session cleanup at `sessionCleanupInterval` minutes.
-- **Password hashing is PBKDF2WithHmacSHA256**, 100k iterations, 256-bit key, Base64 `salt:hash` encoding (see `LoginManager.ALGORITHM`).
-- **`MojangAPI`** — async UUID lookup against `api.mojang.com/users/profiles/minecraft/{name}`, returns `CompletableFuture<String>`. Callbacks must be marshalled back to the main thread via `server.execute(...)`.
-- **`ConfirmationManager`** — pending-action store (30s TTL) used by `/changepassword` and `/unregister`, drained by `/directauth confirm`.
+- **`LoginManager`** — central authentication state. Thread-safe (`ConcurrentHashMap`). Holds `authenticatedPlayers`, `failedLogins` + `loginAttempts` (**keyed by lowercased account name + IP**, not UUID: they survive reconnects and cover case variants, but a stranger on another IP cannot lock the owner out; failures count within max(15 min, `loginLockoutSeconds`), the cooldown entry expires after `loginCooldownMs`; `clearFailedLogins(name)` lifts a lockout), `connectionTimes` (login timeout), `preLoginCache` (mixin-populated; `NULL_MARKER` = "not registered"; entries expire after 10 min), `graceSessions` (IP-locked re-login, invalidated per account with `invalidateSessions(name)`), `pendingOperations` (one async password operation per player). Runs a scheduler for cleanup at `sessionCleanupInterval` minutes and a 2-thread hash pool.
+- **Password hashing is PBKDF2WithHmacSHA256**, 100k iterations, 256-bit key, stored as `iterations:salt:hash` (Base64). Legacy two-part `salt:hash` values (10k in 1.0.0, 100k later) are still accepted by `verifyPassword`, which returns `OK_NEEDS_REHASH`; `/login` then upgrades the stored hash. Never hash on the server thread — use `hashPasswordAsync` / `verifyPasswordAsync`.
+- **`AuthTasks`** — `begin(player)` reserves the player's single in-flight operation; `finish(...)` brings a future back to the server thread, re-resolves the player (same connection only) and reports failures (including exceptions thrown by the callback) with `errInternal`. `onServerThread(server)` is the executor to use instead of `server`: once the server is stopping, `server.execute` would run the task inline on the DB/hash/HTTP thread, so it drops it instead. `revokeAccountAccess(...)` invalidates grace sessions and kicks **every** case variant of an account.
+- **`AccountModeSwitch`** — shared premium/offline conversion (used by `/online` and `/directauth online`): saves the player, runs `MigrationManager` and **kicks in the same tick** (no window to keep playing on moved files), then updates only the mode columns (`setOnlineModeAsync`, never the password) and rolls the migration back if that write fails. Converting to premium stores the exact `offlineUUID` so the way back lands on the right file; `disableWhileOffline` uses it when the player is not connected.
+- **`MojangAPI`** — non-blocking UUID lookup (`HttpClient.sendAsync`, 5s connect / 10s request timeout) against `api.mojang.com/users/profiles/minecraft/{name}`. Only names matching `[A-Za-z0-9_]{3,16}` are ever sent (offline names may contain `#`, `?`, `/`… which would change the URL), and the returned profile name must match. Completes with `null` if the account does not exist and **exceptionally** if Mojang is unreachable. Callbacks must be marshalled back to the main thread.
+- **`ConfirmationManager`** — pending-action store (30s TTL, `Consumer<ServerPlayer>`) used by `/changepassword` and `/unregister`, drained by `/directauth confirm`; cleared on logout and server stop.
 
 ### 4.3 `commands/`
 All Brigadier-based. Registered through `RegisterCommandsEvent` in `DirectAuth`.
@@ -89,37 +92,44 @@ All Brigadier-based. Registered through `RegisterCommandsEvent` in `DirectAuth`.
 | Command | Args | Auth required? | Notes |
 |---|---|---|---|
 | `/register <password>` | 1 | no | Enforces `registrationDelay`, `maxAccountsPerIP`, password length bounds. Auto-authenticates on success. |
-| `/login <password>` | 1 | no | Enforces `loginCooldownMs`, `maxLoginAttempts`. Restores position on success. |
+| `/login <password>` | 1 | no | Enforces `loginCooldownMs`, `maxLoginAttempts` / `loginLockoutSeconds` (per account + IP). Restores position on success; upgrades legacy hashes. |
 | `/online [password]` | 0–1 | yes | Switches account to premium; verifies via `MojangAPI`; triggers `MigrationManager`. |
-| `/changepassword <old> <new>` | 2 | yes | Requires `/directauth confirm`. Disables premium on success. |
+| `/changepassword <old> <new>` | 2 | yes | Requires `/directauth confirm`. Keeps Online Mode (disabling it would strand the data under the online UUID). Revokes the account's other sessions and connections. |
 | `/unregister <password>` | 1 | yes | Requires `/directauth confirm`. Kicks player after deletion. |
 | `/logout` | 0 | yes | Invalidates grace session and kicks. |
 | `/directauth confirm` | 0 | varies | Drains `ConfirmationManager`. |
-| `/directauth online <user> <bool>` | 2 | **op** | Admin: toggle premium flag. |
-| `/directauth resetpass <user> <newpw>` | 2 | **op** | Admin: force password reset. |
-| `/directauth unregister <user>` | 1 | **op** | Admin: force-delete account. |
+| `/directauth online <user> <bool>` | 2 | **op** | Admin: toggle Online Mode via `AccountModeSwitch` (Mojang lookup + data migration in either direction). Enabling needs the target online **and authenticated**; disabling works offline when `offlineUUID` is known. Kicks the target. |
+| `/directauth resetpass <user> <newpw>` | 2 | **op** | Admin: force password reset; revokes all sessions/connections of the account and clears its login lockout. |
+| `/directauth unregister <user>` | 1 | **op** | Admin: force-delete account; revokes all sessions/connections of the account. |
+| `/directauth reload` | 0 | **op** | Re-reads config + language files; fails (keeping the old config) on a malformed `DirectAuth-config.json`. A malformed language file is logged and replaced by that language's built-in defaults. |
+| `/directauth resetlang` | 0 | **op** | Deletes the en/es language files so they regenerate from defaults. |
 
 ### 4.4 `events/`
-- **`ConnectionHandler`** — `ServerStartedEvent` (init DB/config/scheduler), `ServerStoppingEvent` (close), `PlayerLoggedInEvent` (consume mixin pre-cache, attempt grace-session restore, otherwise teleport to spawn and save original position), `PlayerLoggedOutEvent` (pause session if authenticated, else drop).
-- **`PlayerRestrictionHandler`** — enforces the unauthenticated-player jail. Anchors players with a `Map<UUID, Vec3>`, applies slowness/jump/blindness via `EntityTickEvent`, cancels block break, left/right click, item drop/pickup, mount, attack, chat (except `/register` `/login` `/online`), damage (set to 0), and healing. Sends the auth reminder every ~5 seconds (100 ticks). Kicks if `loginTimeout` elapsed.
+- **`ConnectionHandler`** — `ServerStartedEvent` (fresh `LoginManager`, init DB/config/scheduler), `ServerStoppedEvent` (close DB, shut down `LoginManager`, clear anchors/confirmations; runs *after* players are disconnected), `PlayerLoggedInEvent` (consume mixin pre-cache, attempt grace-session restore only if the account exists, otherwise teleport to spawn, save original position and reset the anchor), `PlayerLoggedOutEvent` (pause session if authenticated, else drop).
+- **`PlayerRestrictionHandler`** — enforces the unauthenticated-player jail. `isRestricted(entity)` is the single check (real `ServerPlayer`, **not a `FakePlayer`**, not authenticated) — mixins use it too. Anchors players with a `Map<UUID, Anchor(dimension, Vec3)>` via `EntityTickEvent` (teleports back across dimensions if needed), cancels block break, left/right click, entity interact (incl. `EntityInteractSpecific` for armor stands), item pickup, XP pickup, mount, attack, all chat (commands are filtered separately in `CommandEvent`: only `register`/`login`/`online`), damage (set to 0), and healing. Item drops and inventory/container clicks are blocked at the packet level by `MixinServerGamePacketListenerImpl` — **don't** handle `ItemTossEvent`: the game itself fires it for drops (closing menus on disconnect, `/give`). `release(player)` removes the anchor and resyncs effects after authentication. Sends the auth reminder every ~5 seconds (100 ticks). Kicks if `loginTimeout` elapsed.
 
 ### 4.5 `mixin/`
-- **`MixinServerLoginPacketListenerImpl`** — async pre-load of `UserData` during the login handshake so `PlayerLoggedInEvent` doesn't block on SQLite.
+- **`MixinServerLoginPacketListenerImpl`** — async pre-load of `UserData` during the login handshake so neither the handshake nor `PlayerLoggedInEvent` blocks on SQLite. Phase 2 only *peeks* the cache. Exceptions from re-running vanilla `handleHello` inside the future disconnect the client instead of being swallowed.
+- **`MixinLivingEntityEffects`** — cancels `tickEffects` for restricted players so effect durations freeze while in the jail (the client HUD is hidden/resynced by `PlayerRestrictionHandler`).
+- **`MixinServerPlayerRespawn`** — makes `findRespawnPositionAndUseSpawnBlock` return world spawn for restricted players, so respawning neither reveals the account's bed/anchor nor consumes an anchor charge. After `/login`, `LoginCommand` calls the same vanilla method (now unrestricted) so anchor charges and invalid spawn points follow vanilla rules.
+- **`MixinServerGamePacketListenerImpl`** — cancels drop actions, container clicks and creative-slot packets for restricted players (injected *after* `PacketUtils.ensureRunningOnSameThread`, i.e. on the server thread) and resyncs the client inventory.
 - **`PlayerListAccessor`** — invoker for the protected `PlayerList.save()` used by `MigrationManager` to flush dirty player files before renaming on premium conversion.
 
 ### 4.6 `data/`
-- **`DatabaseManager`** — single-threaded `ExecutorService` wrapping SQLite. Table:
+- **`DatabaseManager`** — single-threaded `ExecutorService` wrapping SQLite; **every public method is async** and the sync helpers are private, so check-then-write inside one task is atomic (`registerUserAsync` re-checks existence and `maxAccountsPerIP` next to the INSERT). `close()` waits for queued writes. Table:
   ```sql
   users(username TEXT PRIMARY KEY, passwordHash TEXT NOT NULL,
-        isPremium INTEGER DEFAULT 0, onlineUUID TEXT, registrationIp TEXT)
+        isPremium INTEGER DEFAULT 0, onlineUUID TEXT, registrationIp TEXT,
+        offlineUUID TEXT)
   ```
-  All CRUD is `*Async` returning `CompletableFuture`. On startup, if `DirectAuth_users.json` exists, it is imported and renamed to `DirectAuth_users.json.MIGRATED`.
+  Keys are lowercased with `Locale.ROOT`; lookups use `username IN (?, ?)` to also match rows written by older versions with the system locale (e.g. Turkish dotless `ı`).
+  All CRUD is `*Async` returning `CompletableFuture` (SQL errors complete the future exceptionally). On startup, if `DirectAuth_users.json` exists, it is imported in one transaction and renamed to `DirectAuth_users.json.MIGRATED` **only after a successful commit**.
 - **`UserData`** — POJO mirror of the table row. `username` is always lowercased.
-- **`PositionManager`** — JSON store of `UUID → StoredLocation` (dimension, x/y/z, yaw/pitch, health, food, saturation, fire ticks). Populated on join, drained on successful login.
-- **`MigrationManager` / `MigrationMode`** — runs when a player flips to premium and the offline-UUID data must be moved to the online-UUID file/folder. Strategies:
+- **`PositionManager`** — JSON store of `UUID → StoredLocation` (dimension, x/y/z, yaw/pitch, health, food, saturation, fire ticks). Populated on join, drained on successful login. Written atomically (temp file + move) on its own thread from a snapshot, flushed on stop; a corrupt file is moved aside to `*.corrupt-<ts>` instead of crashing startup. Players who have never played (zero play time) are not stored — they are at spawn anyway.
+- **`MigrationManager` / `MigrationMode`** — moves a player's data from one UUID to another (offline → online on premium conversion, or back when an admin disables it). Every step is journaled: on any failure it rolls back what it already did and throws, and the returned `Migration` can be rolled back later. Strategies:
   - `RENAME` — rename a single file (vanilla `playerdata`, `stats`, `advancements`, `skinrestorer`).
   - `DIRECTORY` — rename a UUID-named directory (death-tracker mods).
-  - `TEXT_REPLACE` — rename and bulk-replace UUID strings (both dashed and undashed) inside the file (FTB Quests).
+  - `TEXT_REPLACE` — rename and bulk-replace UUID strings (both dashed and undashed) inside the file (FTB Quests). Read/written as ISO-8859-1 so any encoding round-trips byte-exactly.
   Backs up any destination that already exists. Mapping is in `ModConfig.migrationMap`.
 
 ---
@@ -134,7 +144,7 @@ Gson, pretty-printed. Loaded once on `ServerStartedEvent`; missing fields are fi
 | General | `language` (`"en"`) |
 | Session | `sessionGracePeriod` (600s), `sessionCleanupInterval` (10 min) |
 | Password | `minPasswordLength` (4), `maxPasswordLength` (32) |
-| Login flood | `maxLoginAttempts` (5), `loginCooldownMs` (3000), `loginTimeout` (60s) |
+| Login flood | `maxLoginAttempts` (5), `loginCooldownMs` (3000), `loginLockoutSeconds` (300), `loginTimeout` (60s) |
 | Anti-bot | `registrationDelay` (1s), `maxAccountsPerIP` (5) |
 | Migration | `migrationMap` — directory → `MigrationMode` |
 
@@ -183,8 +193,9 @@ All commands from repo root. Java 21 must be on `PATH` or via a Gradle toolchain
 - UTF-8 enforced at compile time (`options.encoding = 'UTF-8'`).
 
 ### Threading
-- Anything touching `DatabaseManager` is async — always chain via `.thenAcceptAsync(..., server)` or `server.execute(...)` to land mutations back on the server thread.
+- Anything touching `DatabaseManager` is async — always chain via `.thenAcceptAsync(..., AuthTasks.onServerThread(server))` to land mutations back on the server thread (plain `server` as executor runs the callback on the wrong thread during shutdown).
 - `MojangAPI` callbacks must also be marshalled back to the server thread before touching player state.
+- PBKDF2 costs ~50-150 ms per hash: never call `LoginManager.hashPassword` / `verifyPassword` on the server thread; use the `*Async` variants. For player commands, wrap the future with `AuthTasks.begin` / `AuthTasks.finish`, which also re-resolves the player (they may have respawned or disconnected by the time it completes).
 - Player-state maps in `LoginManager` and `PlayerRestrictionHandler` are `ConcurrentHashMap` — preserve that when adding new ones.
 
 ### Singletons
@@ -192,7 +203,7 @@ All commands from repo root. Java 21 must be on `PATH` or via a Gradle toolchain
 - Initialization order matters: config and DB are wired in `ServerStartedEvent`, so don't touch them in the mod constructor.
 
 ### Anti-bot expectations
-When changing registration / login flow, preserve all of: `registrationDelay`, `maxAccountsPerIP` (queried via `DatabaseManager#countAccountsByIP`), grace-session IP binding, login cooldown, max-attempts kick, anchored-position enforcement, and the `loginTimeout` kick. These are the security surface — regressions here are silent and dangerous.
+When changing registration / login flow, preserve all of: `registrationDelay`, `maxAccountsPerIP` (checked atomically with the INSERT in `DatabaseManager#registerUserAsync`), grace-session IP binding, login cooldown, per-account max-attempts lockout (must not reset on reconnect), anchored-position enforcement, and the `loginTimeout` kick. These are the security surface — regressions here are silent and dangerous.
 
 ### Premium migration
 `/online` triggers `MigrationManager`. Adding support for a new mod's player-data folder = adding an entry to the default `migrationMap` in `ModConfig` plus, if the mod stores UUID strings inside files (like FTB Quests), use `TEXT_REPLACE`. Always backs up existing destinations — don't shortcut this.
@@ -209,6 +220,6 @@ When changing registration / login flow, preserve all of: `registrationDelay`, `
 - **Adding a config field** → add field + default in `ModConfig`, the loader rewrites the JSON automatically on next start.
 - **Adding a message** → add field in `LangConfig` with both English and Spanish defaults; reference via `getConfig().getLang().<field>`.
 - **Adding a persistent column** → migrate the SQLite schema in `DatabaseManager#init` (ALTER TABLE with a try/catch on `SQLITE_ERROR` is the existing pattern); add the field to `UserData`.
-- **Adding a restriction** → add a `@SubscribeEvent` method in `PlayerRestrictionHandler` and gate it on `LoginManager#isAuthenticated`.
+- **Adding a restriction** → add a `@SubscribeEvent` method in `PlayerRestrictionHandler` and gate it on `PlayerRestrictionHandler#isRestricted` (which already excludes `FakePlayer`s).
 
 Keep this file in sync with what's actually in the code. If you make an architectural change that contradicts a section here, update the section in the same PR.

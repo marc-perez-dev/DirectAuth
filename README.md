@@ -8,18 +8,18 @@ DirectAuth is a **server-side** authentication mod for Minecraft NeoForge 1.21.1
 
 It is strictly server-side: clients do **not** need to install this mod to join. Players can connect with any vanilla client.
 
-All database operations run asynchronously, so the main server thread never freezes during logins.
+All database operations and password hashing run asynchronously, so the main server thread never freezes during logins.
 
 ## Key Features
 
 * **Server-Side Only**: Install it on your server and players join with any vanilla client. Nothing to install client-side.
 * **Zero-Configuration Database**: Uses an embedded SQLite database. No MySQL or external database server required.
-* **No Lag**: All database I/O is performed asynchronously on a separate thread pool.
+* **No Lag**: All database I/O and password hashing run on separate threads, never on the server tick thread.
 * **Strong Security**: Passwords are hashed with PBKDF2WithHmacSHA256 using a unique salt per user.
 * **Online Auto-Login**: Players with a legitimate Mojang/Microsoft account can use `/online` to verify their account and skip typing passwords in future sessions.
 * **Session Grace Period**: If a player disconnects and reconnects within the configured grace period, they stay authenticated without logging in again.
 * **Anti-Bot Protection**: Configurable registration delay and a maximum number of accounts per IP address.
-* **Strict Restrictions**: Unauthenticated players cannot move, chat, interact with blocks/entities, drop or pick up items, attack, gain XP, or regenerate health.
+* **Strict Restrictions**: Unauthenticated players cannot move, chat, interact with blocks/entities, drop, move or pick up items (inventory and container clicks are blocked), attack, gain XP, or regenerate health. If they respawn, they appear at world spawn instead of the account's bed or respawn anchor. Other mods' automation (`FakePlayer`s such as deployers or miners) is never restricted.
 * **Smart Data Migration**: When a player switches from offline to online mode their UUID changes, so the mod automatically migrates their data to the new UUID (see below).
 * **Localization**: Ships with English (`en`) and Spanish (`es`); fully customizable message strings.
 
@@ -32,7 +32,7 @@ All database operations run asynchronously, so the main server thread never free
 | **/register** | `/register <password>` | Creates a new account. Required on first connection. |
 | **/login** | `/login <password>` | Authenticates your session. |
 | **/logout** | `/logout` | Logs you out (disconnects you from the server). |
-| **/changepassword** | `/changepassword <oldPassword> <newPassword>` | Changes your password. Requires being logged in. |
+| **/changepassword** | `/changepassword <oldPassword> <newPassword>` | Changes your password. Requires being logged in. Your Online Mode status is kept; other sessions of the account are logged out. |
 | **/unregister** | `/unregister <password>` | Permanently deletes your own account (confirms with your password). |
 | **/online** | `/online <password>` | Verifies your account against Mojang's servers to enable auto-login. **Migrates your data to a new UUID** — see the warning below. |
 | **/directauth confirm** | `/directauth confirm` | Confirms a pending action when the mod requests it. |
@@ -41,15 +41,15 @@ All database operations run asynchronously, so the main server thread never free
 
 | Command | Usage | Description |
 | :--- | :--- | :--- |
-| **/directauth online** | `/directauth online <user> <true\|false>` | Manually toggles a player's online-mode status. |
-| **/directauth resetpass** | `/directauth resetpass <user> <newPassword>` | Resets a player's password. |
+| **/directauth online** | `/directauth online <user> <true\|false>` | Toggles a player's online-mode status, migrating their data between the offline and online UUIDs. Enabling requires the player to be online and logged in; disabling also works while they are offline for accounts converted with this version. Connected players are kicked to reconnect with the new UUID. |
+| **/directauth resetpass** | `/directauth resetpass <user> <newPassword>` | Resets a player's password, invalidates their saved sessions, lifts any failed-login lockout and kicks every connection of that account. |
 | **/directauth unregister** | `/directauth unregister <user>` | Force-deletes a player's account (and kicks them if online). |
 | **/directauth reload** | `/directauth reload` | Reloads the config and language files from disk at runtime — no server restart needed. |
 | **/directauth resetlang** | `/directauth resetlang` | Deletes the language files so they regenerate from the mod's built-in defaults (discards manual edits). |
 
 ## ⚠️ Important: Online Mode Migration
 
-When a player runs `/online`, their UUID changes from the offline UUID to their real Mojang UUID, and DirectAuth migrates their data to the new UUID.
+When a player runs `/online`, their UUID changes from the offline UUID to their real Mojang UUID, and DirectAuth migrates their data to the new UUID. If any step of the migration fails, everything already moved is rolled back and the account stays in offline mode.
 
 **By default** the mod already migrates vanilla data (inventory, ender chest, advancements, statistics) **and** a few common mods (graves/deaths, FTB Quests, SkinRestorer).
 
@@ -74,7 +74,7 @@ On first launch the following files are generated:
 Edit `world/serverconfig/DirectAuth-config.json` to customize:
 
 * **Language**: `language` (`"en"` or `"es"`).
-* **Security**: `minPasswordLength`, `maxPasswordLength`, `maxLoginAttempts`, `loginCooldownMs`, `loginTimeout` (seconds before a non-authenticated player is kicked).
+* **Security**: `minPasswordLength`, `maxPasswordLength`, `maxLoginAttempts`, `loginCooldownMs`, `loginLockoutSeconds` (how long logins are blocked after `maxLoginAttempts` failed attempts; attempts are counted per account **and IP**, so reconnecting does not reset them but someone else cannot lock you out from another IP; `0` = just kick at the limit), `loginTimeout` (seconds before a non-authenticated player is kicked).
 * **Sessions**: `sessionGracePeriod` (seconds a session survives after disconnect) and `sessionCleanupInterval` (minutes between cleanups of expired sessions).
 * **Anti-Bot**: `registrationDelay` (seconds to wait before a fresh player can register) and `maxAccountsPerIP`.
 * **Data Migration**: `migrationMap` — a map of *folder name → migration mode*. To support an extra mod, add its data folder there. Available modes:
@@ -97,6 +97,8 @@ Edit `world/serverconfig/DirectAuth-config.json` to customize:
 
 Message strings can be edited in the `DirectAuth-lang-*.json` files.
 
+If the config file contains invalid JSON, DirectAuth logs an error and keeps running with the previous settings (or the defaults on startup) without overwriting your file; `/directauth reload` reports the failure.
+
 ## Troubleshooting (FAQ)
 
 **Q: I keep getting teleported back when I move / I can't eat or regenerate health.**
@@ -107,7 +109,7 @@ A: The server administrator likely hadn't added that mod's data folder to `migra
 
 ## Technical Details
 
-* **Hashing**: PBKDF2WithHmacSHA256 with a unique salt per user.
+* **Hashing**: PBKDF2WithHmacSHA256 (100,000 iterations) with a unique salt per user, stored as `iterations:salt:hash`. Older hashes without the iteration count (including the 10,000-iteration hashes from 1.0.0) are still accepted and upgraded on the next login.
 * **Storage**: SQLite at `world/serverconfig/directauth.db` — no external database server. A legacy `DirectAuth_users.json` is migrated automatically on first run if present.
 * **Session Management**: Sessions are validated against the internal database (and Mojang's session servers for online users).
 * **Protection**: The login listener is injected at high priority to prevent unauthorized packet processing.
