@@ -7,15 +7,19 @@ import net.minecraft.server.level.ServerPlayer;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Consumer;
 
 public class ConfirmationManager {
     private static final Map<UUID, PendingAction> pendingActions = new ConcurrentHashMap<>();
     private static final long TIMEOUT_MS = 30000; // 30 segundos para confirmar
 
-    private record PendingAction(Runnable action, long timestamp) {}
+    /** La acción recibe el jugador que confirma (la entidad puede haber cambiado tras un respawn). */
+    private record PendingAction(Consumer<ServerPlayer> action, long timestamp) {}
 
-    public static void requestConfirmation(ServerPlayer player, Runnable action) {
-        pendingActions.put(player.getUUID(), new PendingAction(action, System.currentTimeMillis()));
+    public static void requestConfirmation(ServerPlayer player, Consumer<ServerPlayer> action) {
+        long now = System.currentTimeMillis();
+        pendingActions.values().removeIf(pending -> now - pending.timestamp > TIMEOUT_MS);
+        pendingActions.put(player.getUUID(), new PendingAction(action, now));
         player.sendSystemMessage(Component.literal(DirectAuth.getConfig().getLang().msgConfirmRequest));
     }
 
@@ -33,6 +37,15 @@ public class ConfirmationManager {
         }
 
         // Ejecutar la acción
-        pending.action.run();
+        pending.action.accept(player);
+    }
+
+    /** Descarta la acción pendiente de un jugador (al desconectarse). */
+    public static void cancel(ServerPlayer player) {
+        pendingActions.remove(player.getUUID());
+    }
+
+    public static void clear() {
+        pendingActions.clear();
     }
 }

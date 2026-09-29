@@ -2,6 +2,7 @@ package com.marcp.directauth.config;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
+import com.google.gson.JsonParseException;
 import com.marcp.directauth.data.MigrationMode;
 
 import java.io.*;
@@ -26,6 +27,8 @@ public class ModConfig {
     public int maxLoginAttempts = 5;
     public long loginCooldownMs = 3000;
     public int loginTimeout = 60; // Time in seconds before kick
+    // Seconds an account stays locked after maxLoginAttempts failed logins (counted per account, across reconnects)
+    public int loginLockoutSeconds = 300;
     
     // Anti-Bot Settings
     public int registrationDelay = 1; // 1 second wait before registering
@@ -63,46 +66,75 @@ public class ModConfig {
         migrationMap.put("skinrestorer", MigrationMode.RENAME);
     }
 
+    /** Thrown when the config file exists but cannot be read or parsed. */
+    public static class ConfigException extends RuntimeException {
+        public ConfigException(String message, Throwable cause) { super(message, cause); }
+    }
+
+    /**
+     * Loads the config (and the language files) from disk.
+     * If the file does not exist it is created with defaults. If it exists but is unreadable or
+     * malformed, a {@link ConfigException} is thrown and the file is left untouched, so the
+     * admin's edits are not overwritten with defaults.
+     */
     public static ModConfig load(Path configPath) {
         ModConfig config;
-        try {
-            if (Files.exists(configPath)) {
-                Reader reader = Files.newBufferedReader(configPath);
+        if (Files.exists(configPath)) {
+            try (Reader reader = Files.newBufferedReader(configPath)) {
                 config = GSON.fromJson(reader, ModConfig.class);
-                reader.close();
-                
-                // Asegurar que el mapa no sea nulo si viene de una config vieja
-                if (config.migrationMap == null || config.migrationMap.isEmpty()) {
-                    config.migrationMap = new LinkedHashMap<>();
-                    config.setDefaults();
-                }
+            } catch (IOException | JsonParseException e) {
+                throw new ConfigException("Could not read " + configPath + ": " + e.getMessage(), e);
+            }
+            if (config == null) {
+                throw new ConfigException("Could not read " + configPath + ": the file is empty", null);
+            }
+
+            // Asegurar que el mapa no sea nulo si viene de una config vieja
+            if (config.migrationMap == null || config.migrationMap.isEmpty()) {
+                config.migrationMap = new LinkedHashMap<>();
+                config.setDefaults();
+            }
+            // Un modo desconocido (typo en el JSON) llega como null: se ignora esa entrada, pero NO
+            // se reescribe el fichero, para que el admin pueda corregirla en vez de perderla
+            java.util.List<String> invalidModes = new java.util.ArrayList<>();
+            config.migrationMap.forEach((folder, mode) -> { if (mode == null) invalidModes.add(folder); });
+            if (invalidModes.isEmpty()) {
                 config.save(configPath); // Guardar para actualizar campos nuevos
             } else {
-                config = new ModConfig();
-                config.save(configPath);
+                invalidModes.forEach(config.migrationMap::remove);
+                com.marcp.directauth.DirectAuth.LOGGER.warn(
+                    "DirectAuth: Unknown migration mode for {} in {} (valid: RENAME, DIRECTORY, TEXT_REPLACE). Those folders will NOT be migrated until it is fixed; the file was not rewritten.",
+                    invalidModes, configPath.getFileName());
             }
-        } catch (IOException e) {
-            System.err.println("Error loading config: " + e.getMessage());
+        } else {
             config = new ModConfig();
+            config.save(configPath);
         }
-        
-        // Load language (sin cambios)
-        Path dir = configPath.getParent();
+
+        config.loadLanguages(configPath.getParent());
+        return config;
+    }
+
+    /** Built-in defaults plus the language files, used when the config file cannot be read at startup. */
+    public static ModConfig defaults(Path configDir) {
+        ModConfig config = new ModConfig();
+        config.loadLanguages(configDir);
+        return config;
+    }
+
+    private void loadLanguages(Path dir) {
         LangConfig.load(dir.resolve("DirectAuth-lang-en.json"), "en");
         LangConfig.load(dir.resolve("DirectAuth-lang-es.json"), "es");
-        String langFileName = "DirectAuth-lang-" + config.language + ".json";
-        Path langPath = dir.resolve(langFileName);
-        config.langConfig = LangConfig.load(langPath, config.language);
-        
-        return config;
+        String langFileName = "DirectAuth-lang-" + language + ".json";
+        langConfig = LangConfig.load(dir.resolve(langFileName), language);
     }
 
     public void save(Path configPath) {
         try {
             Files.createDirectories(configPath.getParent());
-            Writer writer = Files.newBufferedWriter(configPath);
-            GSON.toJson(this, writer);
-            writer.close();
+            try (Writer writer = Files.newBufferedWriter(configPath)) {
+                GSON.toJson(this, writer);
+            }
         } catch (IOException e) {
             System.err.println("Error saving config: " + e.getMessage());
         }

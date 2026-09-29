@@ -62,8 +62,39 @@ public class DirectAuth {
         positionManager = new PositionManager(worldPath);
     }
     
-    public static void initConfig(Path configPath) {
-        config = ModConfig.load(configPath);
+    /**
+     * Carga la configuración desde disco.
+     * @return false si el fichero existe pero no se pudo leer; en ese caso se mantiene la
+     *         configuración anterior (o los valores por defecto si es el primer arranque) y
+     *         el fichero no se toca.
+     */
+    public static boolean initConfig(Path configPath) {
+        try {
+            config = ModConfig.load(configPath);
+            return true;
+        } catch (ModConfig.ConfigException e) {
+            LOGGER.error("DirectAuth: {}. {}", e.getMessage(),
+                config == null ? "Using built-in defaults until the file is fixed" : "Keeping the previous settings");
+            if (config == null) {
+                config = ModConfig.defaults(configPath.getParent());
+            }
+            return false;
+        }
+    }
+
+    /** Sustituye el LoginManager por uno nuevo (sin estado del servidor anterior). */
+    public static void resetLoginManager() {
+        loginManager = new LoginManager();
+    }
+
+    public static void closeDatabase() {
+        if (database != null) {
+            database.close();
+            database = null;
+        }
+        if (positionManager != null) {
+            positionManager.close();
+        }
     }
     
     public static DatabaseManager getDatabase() {

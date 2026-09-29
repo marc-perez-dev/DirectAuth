@@ -1,8 +1,10 @@
 package com.marcp.directauth.commands;
 
 import com.marcp.directauth.DirectAuth;
+import com.marcp.directauth.auth.AccountModeSwitch;
+import com.marcp.directauth.auth.AuthTasks;
 import com.marcp.directauth.auth.ConfirmationManager;
-import com.marcp.directauth.auth.LoginManager;
+import com.marcp.directauth.auth.MojangAPI;
 import com.marcp.directauth.config.LangConfig;
 import com.marcp.directauth.data.UserData;
 import com.mojang.brigadier.CommandDispatcher;
@@ -18,6 +20,7 @@ import net.minecraft.world.level.storage.LevelResource;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.concurrent.CompletableFuture;
 
 public class DirectAuthCommand {
     
@@ -93,7 +96,10 @@ public class DirectAuthCommand {
         Path configPath = context.getSource().getServer()
                 .getWorldPath(LevelResource.ROOT)
                 .resolve("serverconfig").resolve("DirectAuth-config.json");
-        DirectAuth.initConfig(configPath);
+        if (!DirectAuth.initConfig(configPath)) {
+            context.getSource().sendFailure(Component.literal(DirectAuth.getConfig().getLang().errConfigReloadFailed));
+            return 0;
+        }
 
         // Reaplicar el intervalo de limpieza de sesiones (init() es idempotente: reprograma la tarea)
         DirectAuth.getLoginManager().init(DirectAuth.getConfig().sessionCleanupInterval);
@@ -118,7 +124,10 @@ public class DirectAuthCommand {
             DirectAuth.LOGGER.error("DirectAuth: Failed to delete language files: {}", e.getMessage());
         }
 
-        DirectAuth.initConfig(serverConfig.resolve("DirectAuth-config.json"));
+        if (!DirectAuth.initConfig(serverConfig.resolve("DirectAuth-config.json"))) {
+            context.getSource().sendFailure(Component.literal(DirectAuth.getConfig().getLang().errConfigReloadFailed));
+            return 0;
+        }
 
         context.getSource().sendSuccess(() -> Component.literal(
             DirectAuth.getConfig().getLang().msgLangReset
@@ -127,64 +136,178 @@ public class DirectAuthCommand {
     }
 
     private static int setOnlineMode(CommandContext<CommandSourceStack> context) {
+        CommandSourceStack source = context.getSource();
         String username = StringArgumentType.getString(context, "user");
         boolean newValue = BoolArgumentType.getBool(context, "value");
-        
-        UserData userData = DirectAuth.getDatabase().getUser(username);
-        if (userData == null) {
-            context.getSource().sendFailure(Component.literal(LangConfig.format(DirectAuth.getConfig().getLang().errAdminUserNotFound, username)));
-            return 0;
-        }
 
-        userData.setPremium(newValue);
-        if (!newValue) userData.setOnlineUUID(null); // Limpiar UUID si se desactiva
-        
-        DirectAuth.getDatabase().updateUser(username, userData);
-        context.getSource().sendSuccess(() -> Component.literal(
-            LangConfig.format(DirectAuth.getConfig().getLang().msgAdminPremiumUpdated, username, newValue)
-        ), true);
+        AuthTasks.finish(source, DirectAuth.getDatabase().getUserAsync(username), userData -> {
+            if (userData == null) {
+                source.sendFailure(Component.literal(LangConfig.format(DirectAuth.getConfig().getLang().errAdminUserNotFound, username)));
+                return;
+            }
+            if (newValue) {
+                enableOnlineMode(source, username, userData);
+            } else {
+                disableOnlineMode(source, username, userData);
+            }
+        });
         return 1;
     }
 
-    private static int resetPassword(CommandContext<CommandSourceStack> context) {
-        String username = StringArgumentType.getString(context, "user");
-        String newPass = StringArgumentType.getString(context, "newPassword");
-        
-        UserData userData = DirectAuth.getDatabase().getUser(username);
-        if (userData == null) {
-            context.getSource().sendFailure(Component.literal(LangConfig.format(DirectAuth.getConfig().getLang().errAdminUserNotFound, username)));
-            return 0;
+    /** Resultado de consultar a Mojang: {@code onlineUUID} es null si la cuenta no existe. */
+    private record MojangLookup(boolean reachable, String onlineUUID) {}
+
+    private static void reportModeUpdated(CommandSourceStack source, String username, boolean value) {
+        source.sendSuccess(() -> Component.literal(
+            LangConfig.format(DirectAuth.getConfig().getLang().msgAdminPremiumUpdated, username, value)
+        ), true);
+    }
+
+    /**
+     * Jugador conectado Y autenticado con esta cuenta (cualquier variante de mayúsculas). Un
+     * jugador encerrado sin login, o un suplantador con otra variante del nombre, no cuenta:
+     * migrar sus datos movería la posición del spawn o unos datos que no son los de la cuenta.
+     */
+    private static ServerPlayer authenticatedPlayerOf(CommandSourceStack source, String username) {
+        for (ServerPlayer player : AuthTasks.playersOfAccount(source.getServer(), username)) {
+            if (DirectAuth.getLoginManager().isAuthenticated(player)) return player;
+        }
+        return null;
+    }
+
+    /**
+     * Activar el Modo Online requiere la UUID de Mojang y migrar los datos desde la UUID offline
+     * actual del jugador, así que el jugador tiene que estar conectado y autenticado.
+     */
+    private static void enableOnlineMode(CommandSourceStack source, String username, UserData userData) {
+        if (userData.isPremium() && userData.getOnlineUUID() != null) {
+            reportModeUpdated(source, username, true); // Ya estaba activado
+            return;
+        }
+        if (authenticatedPlayerOf(source, username) == null) {
+            source.sendFailure(Component.literal(LangConfig.format(DirectAuth.getConfig().getLang().errAdminPlayerMustBeOnline, username)));
+            return;
         }
 
-        userData.setPasswordHash(LoginManager.hashPassword(newPass));
-        DirectAuth.getDatabase().updateUser(username, userData);
-        
-        context.getSource().sendSuccess(() -> Component.literal(
-            LangConfig.format(DirectAuth.getConfig().getLang().msgAdminResetSuccess, username)
-        ), true);
+        CompletableFuture<MojangLookup> lookup = MojangAPI.getOnlineUUID(username).handle((uuid, error) -> {
+            if (error != null) {
+                DirectAuth.LOGGER.warn("DirectAuth: Error querying Mojang API for {}: {}", username, error.getMessage());
+                return new MojangLookup(false, null);
+            }
+            return new MojangLookup(true, MojangAPI.formatUUID(uuid));
+        });
+
+        AuthTasks.finish(source, lookup, result -> {
+            if (!result.reachable()) {
+                source.sendFailure(Component.literal(DirectAuth.getConfig().getLang().errMojangUnavailable));
+                return;
+            }
+            if (result.onlineUUID() == null) {
+                source.sendFailure(Component.literal(DirectAuth.getConfig().getLang().errMojangNotFound));
+                return;
+            }
+            ServerPlayer target = authenticatedPlayerOf(source, username);
+            if (target == null) { // Se desconectó mientras consultábamos a Mojang
+                source.sendFailure(Component.literal(LangConfig.format(DirectAuth.getConfig().getLang().errAdminPlayerMustBeOnline, username)));
+                return;
+            }
+            reportSwitch(source, username, true,
+                AccountModeSwitch.apply(target, userData, true, result.onlineUUID(), DirectAuth.getConfig().getLang().msgAdminModeChangedKick));
+        });
+    }
+
+    private static void disableOnlineMode(CommandSourceStack source, String username, UserData userData) {
+        if (!userData.isPremium()) {
+            reportModeUpdated(source, username, false); // Ya estaba desactivado
+            return;
+        }
+
+        if (userData.getOnlineUUID() == null) {
+            // Estado inconsistente (premium sin UUID): nunca se migró nada, basta con la DB
+            AuthTasks.finish(source, DirectAuth.getDatabase().setOnlineModeAsync(username, false, null, null), updated -> {
+                if (!updated) {
+                    source.sendFailure(Component.literal(LangConfig.format(DirectAuth.getConfig().getLang().errAdminUserNotFound, username)));
+                    return;
+                }
+                reportModeUpdated(source, username, false);
+            });
+            return;
+        }
+
+        // Sus datos están bajo la UUID online: hay que migrarlos de vuelta a la offline
+        ServerPlayer target = null;
+        for (ServerPlayer player : AuthTasks.playersOfAccount(source.getServer(), username)) {
+            if (userData.getOnlineUUID().equals(player.getStringUUID())) target = player;
+        }
+        if (target != null) {
+            reportSwitch(source, username, false,
+                AccountModeSwitch.apply(target, userData, false, null, DirectAuth.getConfig().getLang().msgAdminModeChangedKick));
+        } else if (userData.getOfflineUUID() != null) {
+            // No está conectado, pero sabemos a qué UUID offline exacta volver
+            reportSwitch(source, username, false, AccountModeSwitch.disableWhileOffline(source.getServer(), userData));
+        } else {
+            // Cuenta convertida con una versión antigua: la UUID offline depende de las mayúsculas
+            // exactas de su nombre, que solo conocemos si está conectado
+            source.sendFailure(Component.literal(LangConfig.format(DirectAuth.getConfig().getLang().errAdminPlayerMustBeOnline, username)));
+        }
+    }
+
+    private static void reportSwitch(CommandSourceStack source, String username, boolean premium, CompletableFuture<Boolean> switchResult) {
+        AuthTasks.finish(source, switchResult, switched -> {
+            if (!switched) {
+                source.sendFailure(Component.literal(LangConfig.format(DirectAuth.getConfig().getLang().errAdminMigrationFailed, username)));
+                return;
+            }
+            reportModeUpdated(source, username, premium);
+        });
+    }
+
+    private static int resetPassword(CommandContext<CommandSourceStack> context) {
+        CommandSourceStack source = context.getSource();
+        String username = StringArgumentType.getString(context, "user");
+        String newPass = StringArgumentType.getString(context, "newPassword");
+
+        CompletableFuture<Boolean> updated = DirectAuth.getLoginManager().hashPasswordAsync(newPass)
+            .thenCompose(hash -> DirectAuth.getDatabase().updatePasswordAsync(username, hash));
+
+        AuthTasks.finish(source, updated, exists -> {
+            if (!exists) {
+                source.sendFailure(Component.literal(LangConfig.format(DirectAuth.getConfig().getLang().errAdminUserNotFound, username)));
+                return;
+            }
+
+            // La contraseña anterior deja de dar acceso: sin sesiones de gracia guardadas y
+            // todas las conexiones de la cuenta fuera (tendrán que entrar con la nueva).
+            // También se levanta cualquier bloqueo por intentos fallidos.
+            AuthTasks.revokeAccountAccess(source.getServer(), username, null, DirectAuth.getConfig().getLang().msgAdminPasswordResetKick);
+            DirectAuth.getLoginManager().clearFailedLogins(username);
+
+            source.sendSuccess(() -> Component.literal(
+                LangConfig.format(DirectAuth.getConfig().getLang().msgAdminResetSuccess, username)
+            ), true);
+        });
         return 1;
     }
 
     private static int forceUnregister(CommandContext<CommandSourceStack> context) {
+        CommandSourceStack source = context.getSource();
         String username = StringArgumentType.getString(context, "user");
-        
-        if (!DirectAuth.getDatabase().userExists(username)) {
-            context.getSource().sendFailure(Component.literal(LangConfig.format(DirectAuth.getConfig().getLang().errAdminUserNotFound, username)));
-            return 0;
-        }
 
-        DirectAuth.getDatabase().deleteUser(username);
-        
-        // Si el jugador está online, lo echamos
-        ServerPlayer player = context.getSource().getServer().getPlayerList().getPlayerByName(username);
-        if (player != null) {
-            DirectAuth.getLoginManager().removePlayer(player);
-            player.connection.disconnect(Component.literal(DirectAuth.getConfig().getLang().msgAccountDeleted));
-        }
+        AuthTasks.finish(source, DirectAuth.getDatabase().deleteUserAsync(username), deleted -> {
+            if (!deleted) {
+                source.sendFailure(Component.literal(LangConfig.format(DirectAuth.getConfig().getLang().errAdminUserNotFound, username)));
+                return;
+            }
 
-        context.getSource().sendSuccess(() -> Component.literal(
-            LangConfig.format(DirectAuth.getConfig().getLang().msgAdminUnregisterSuccess, username)
-        ), true);
+            // Sin sesiones de gracia que restauren una cuenta que ya no existe, y fuera todas
+            // las conexiones de la cuenta
+            AuthTasks.revokeAccountAccess(source.getServer(), username, null, DirectAuth.getConfig().getLang().msgAccountDeleted);
+            DirectAuth.getLoginManager().clearFailedLogins(username);
+
+            source.sendSuccess(() -> Component.literal(
+                LangConfig.format(DirectAuth.getConfig().getLang().msgAdminUnregisterSuccess, username)
+            ), true);
+        });
         return 1;
     }
 }

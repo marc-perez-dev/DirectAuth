@@ -6,6 +6,8 @@
   "mixins": [
     "MixinServerLoginPacketListenerImpl",
     "MixinLivingEntityEffects",
+    "MixinServerPlayerRespawn",
+    "MixinServerGamePacketListenerImpl",
     "PlayerListAccessor"
   ],
   "injectors": {

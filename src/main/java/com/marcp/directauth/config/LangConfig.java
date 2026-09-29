@@ -15,11 +15,13 @@ public class LangConfig {
     public String msgLoginRequest = "§eUse §a/login <password>§e to authenticate.";
     public String msgAuthReminder = "§cYou must authenticate: /register <password> or /login <password>";
     public String errNotPlayer = "Only players can use this command.";
+    public String errInternal = "§cAn internal error occurred. Please try again later.";
+    public String errOperationPending = "§cPlease wait, your previous request is still being processed.";
     
     // --- Registration Messages ---
     public String errAlreadyRegistered = "§cYou already have an account. Use §e/login <password>";
-    public String errPasswordTooShort = "§cPassword must be at least 4 characters long.";
-    public String errPasswordTooLong = "§cPassword cannot be longer than 32 characters.";
+    public String errPasswordTooShort = "§cPassword must be at least %d characters long.";
+    public String errPasswordTooLong = "§cPassword cannot be longer than %d characters.";
     public String msgRegistered = "§a✓ Account registered successfully.";
     public String msgPremiumEnableHint = "§7Do you have a paid Minecraft account? Use §b/online§7 to enable auto-login.";
     public String errRegistrationCooldown = "§cPlease wait a moment before registering.";
@@ -29,7 +31,7 @@ public class LangConfig {
     public String errNotRegistered = "§cYou do not have an account. Use §e/register <password>";
     public String errAlreadyAuthenticated = "§eYou are already authenticated.";
     public String errCooldown = "§cPlease wait a few seconds before trying again.";
-    public String errMaxAttempts = "§cToo many failed attempts.";
+    public String errMaxAttempts = "§cToo many failed attempts. Please try again later.";
     public String msgAuthenticated = "§a✓ Authenticated successfully.";
     public String errWrongPassword = "§cIncorrect password (%d/%d attempts).";
     // Used where there is no attempt tracking (e.g. /unregister, /online), so it omits the counter.
@@ -45,6 +47,8 @@ public class LangConfig {
     public String msgAlreadyPremium = "§eYour account is already set to Online Mode.";
     public String msgVerifying = "§eVerifying account with Mojang...";
     public String errMojangNotFound = "§cNo paid Minecraft account found with this username.";
+    public String errMojangUnavailable = "§cCould not reach Mojang's servers. Please try again later.";
+    public String errPremiumMigrationFailed = "§cYour player data could not be migrated, so Online Mode was not enabled. Nothing was changed.";
     public String msgMojangHint = "§7Ensure you are using a legitimate Minecraft account.";
     public String errUUIDMismatch = "§cYour UUID does not match the Mojang account.";
     public String msgSessionHint = "§7You are using an offline session.";
@@ -61,6 +65,11 @@ public class LangConfig {
     public String errAdminUsageReset = "§cUsage: /directauth resetpass <user> <newPassword>";
     public String errAdminUsageUnregister = "§cUsage: /directauth unregister <user>";
     public String msgConfigReloaded = "§a✓ DirectAuth configuration reloaded.";
+    public String errConfigReloadFailed = "§cDirectAuth-config.json could not be read (see the server log). The previous settings are still active.";
+    public String errAdminPlayerMustBeOnline = "§c%s must be online and logged in to change their Online Mode status, because their player data has to be migrated.";
+    public String errAdminMigrationFailed = "§cThe player data of %s could not be migrated, so nothing was changed. See the server log.";
+    public String msgAdminModeChangedKick = "§eAn administrator changed your account's Online Mode status.\n§ePlease rejoin to apply the change.";
+    public String msgAdminPasswordResetKick = "§eAn administrator reset your password.\n§ePlease rejoin and log in with the new one.";
     public String msgLangReset = "§a✓ DirectAuth built-in (English/Spanish) language files reset to defaults.";
 
     // --- Restriction Messages ---
@@ -70,6 +79,7 @@ public class LangConfig {
     // --- Account Management & Confirmation ---
     public String msgConfirmRequest = "§e⚠️ Confirmation Required!\n§7You are about to perform a sensitive action.\n§7Type §6/directauth confirm§7 to proceed.";
     public String msgPasswordChanged = "§a✓ Password updated successfully.";
+    public String msgPasswordChangedElsewhere = "§eThe password of this account was changed.\n§ePlease rejoin and log in again.";
     public String msgAccountDeleted = "§cYour account has been deleted.";
     public String errOldPasswordWrong = "§cThe old password is incorrect.";
     public String errNoPendingAction = "§cYou have no pending action to confirm.";
@@ -141,11 +151,13 @@ public class LangConfig {
             msgLoginRequest = "§eUsa §a/login <contraseña>§e para autenticarte.";
             msgAuthReminder = "§cDebes autenticarte: /register <contraseña> o /login <contraseña>";
             errNotPlayer = "Solo los jugadores pueden usar este comando.";
+            errInternal = "§cSe produjo un error interno. Inténtalo de nuevo más tarde.";
+            errOperationPending = "§cEspera, tu petición anterior todavía se está procesando.";
 
             // --- Registration Messages ---
             errAlreadyRegistered = "§cYa tienes una cuenta. Usa §e/login <contraseña>";
-            errPasswordTooShort = "§cLa contraseña debe tener al menos 4 caracteres.";
-            errPasswordTooLong = "§cLa contraseña no puede tener más de 32 caracteres.";
+            errPasswordTooShort = "§cLa contraseña debe tener al menos %d caracteres.";
+            errPasswordTooLong = "§cLa contraseña no puede tener más de %d caracteres.";
             msgRegistered = "§a✓ Cuenta registrada exitosamente.";
             msgPremiumEnableHint = "§7¿Tienes una cuenta de Minecraft premium? Usa §b/online§7 para activar el auto-login.";
             errRegistrationCooldown = "§cPor favor, espera un momento antes de registrarte.";
@@ -155,7 +167,7 @@ public class LangConfig {
             errNotRegistered = "§cNo tienes una cuenta. Usa §e/register <contraseña>";
             errAlreadyAuthenticated = "§eYa estás autenticado.";
             errCooldown = "§cPor favor espera unos segundos antes de intentar de nuevo.";
-            errMaxAttempts = "§cDemasiados intentos fallidos.";
+            errMaxAttempts = "§cDemasiados intentos fallidos. Inténtalo de nuevo más tarde.";
             msgAuthenticated = "§a✓ Autenticado exitosamente.";
             errWrongPassword = "§cContraseña incorrecta (%d/%d intentos).";
             errWrongPasswordSimple = "§cContraseña incorrecta.";
@@ -170,6 +182,8 @@ public class LangConfig {
             msgAlreadyPremium = "§eTu cuenta ya está en Modo Online.";
             msgVerifying = "§eVerificando cuenta con Mojang...";
             errMojangNotFound = "§cNo se encontró una cuenta de Minecraft pagada con este nombre.";
+            errMojangUnavailable = "§cNo se pudo contactar con los servidores de Mojang. Inténtalo de nuevo más tarde.";
+            errPremiumMigrationFailed = "§cNo se pudieron migrar tus datos de jugador, así que no se activó el Modo Online. No se ha cambiado nada.";
             msgMojangHint = "§7Asegúrate de estar usando una cuenta legítima de Minecraft.";
             errUUIDMismatch = "§cTu UUID no coincide con la cuenta de Mojang.";
             msgSessionHint = "§7Estás usando una sesión offline.";
@@ -186,6 +200,11 @@ public class LangConfig {
             errAdminUsageReset = "§cUso: /directauth resetpass <usuario> <nueva_contraseña>";
             errAdminUsageUnregister = "§cUso: /directauth unregister <usuario>";
             msgConfigReloaded = "§a✓ Configuración de DirectAuth recargada.";
+            errConfigReloadFailed = "§cNo se pudo leer DirectAuth-config.json (consulta el log del servidor). Se mantiene la configuración anterior.";
+            errAdminPlayerMustBeOnline = "§c%s debe estar conectado y con la sesión iniciada para cambiar su Modo Online, porque hay que migrar sus datos de jugador.";
+            errAdminMigrationFailed = "§cNo se pudieron migrar los datos de jugador de %s, así que no se ha cambiado nada. Consulta el log del servidor.";
+            msgAdminModeChangedKick = "§eUn administrador ha cambiado el Modo Online de tu cuenta.\n§eVuelve a entrar para aplicar el cambio.";
+            msgAdminPasswordResetKick = "§eUn administrador ha restablecido tu contraseña.\n§eVuelve a entrar e inicia sesión con la nueva.";
             msgLangReset = "§a✓ Archivos de idioma integrados de DirectAuth (Inglés/Español) restablecidos a los valores por defecto.";
 
             // --- Restriction Messages ---
@@ -194,6 +213,7 @@ public class LangConfig {
             // --- Nuevas Traducciones ---
             msgConfirmRequest = "§e⚠️ ¡Confirmación Requerida!\n§7Estás a punto de realizar una acción delicada.\n§7Escribe §6/directauth confirm§7 para proceder.";
             msgPasswordChanged = "§a✓ Contraseña actualizada correctamente.";
+            msgPasswordChangedElsewhere = "§eSe ha cambiado la contraseña de esta cuenta.\n§eVuelve a entrar e inicia sesión de nuevo.";
             msgAccountDeleted = "§cTu cuenta ha sido eliminada.";
             errOldPasswordWrong = "§cLa contraseña antigua es incorrecta.";
             errNoPendingAction = "§cNo tienes ninguna acción pendiente de confirmar.";
@@ -211,9 +231,9 @@ public class LangConfig {
     public void save(Path langPath) {
         try {
             Files.createDirectories(langPath.getParent());
-            Writer writer = Files.newBufferedWriter(langPath);
-            GSON.toJson(this, writer);
-            writer.close();
+            try (Writer writer = Files.newBufferedWriter(langPath)) {
+                GSON.toJson(this, writer);
+            }
         } catch (IOException e) {
             System.err.println("Error saving lang config: " + e.getMessage());
         }
