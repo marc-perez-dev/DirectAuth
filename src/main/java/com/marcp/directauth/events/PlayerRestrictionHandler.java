@@ -10,21 +10,21 @@ import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.effect.MobEffectInstance;
 import net.minecraft.world.phys.Vec3;
-import net.neoforged.bus.api.SubscribeEvent;
-import net.neoforged.neoforge.common.util.FakePlayer;
-import net.neoforged.neoforge.common.util.TriState;
-import net.neoforged.neoforge.event.CommandEvent;
-import net.neoforged.neoforge.event.ServerChatEvent;
-import net.neoforged.neoforge.event.entity.EntityMountEvent;
-import net.neoforged.neoforge.event.entity.living.LivingDamageEvent;
-import net.neoforged.neoforge.event.entity.living.LivingHealEvent;
-import net.neoforged.neoforge.event.entity.player.AttackEntityEvent;
-import net.neoforged.neoforge.event.entity.player.ItemEntityPickupEvent;
-import net.neoforged.neoforge.event.entity.player.PlayerInteractEvent;
-import net.neoforged.neoforge.event.entity.player.PlayerXpEvent;
-import net.neoforged.neoforge.event.level.BlockEvent;
-import net.neoforged.neoforge.event.tick.EntityTickEvent;
+import net.minecraftforge.common.util.FakePlayer;
+import net.minecraftforge.event.CommandEvent;
+import net.minecraftforge.event.ServerChatEvent;
+import net.minecraftforge.event.TickEvent;
+import net.minecraftforge.event.entity.EntityMountEvent;
+import net.minecraftforge.event.entity.living.LivingDamageEvent;
+import net.minecraftforge.event.entity.living.LivingHealEvent;
+import net.minecraftforge.event.entity.player.AttackEntityEvent;
+import net.minecraftforge.event.entity.player.EntityItemPickupEvent;
+import net.minecraftforge.event.entity.player.PlayerInteractEvent;
+import net.minecraftforge.event.entity.player.PlayerXpEvent;
+import net.minecraftforge.event.level.BlockEvent;
+import net.minecraftforge.eventbus.api.SubscribeEvent;
 
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -60,7 +60,7 @@ public class PlayerRestrictionHandler {
 
     public static void resyncEffectsToClient(ServerPlayer player) {
         for (MobEffectInstance instance : player.getActiveEffects()) {
-            player.connection.send(new ClientboundUpdateMobEffectPacket(player.getId(), instance, false));
+            player.connection.send(new ClientboundUpdateMobEffectPacket(player.getId(), instance));
         }
     }
     
@@ -88,49 +88,57 @@ public class PlayerRestrictionHandler {
     }
 
     // --- 1. Movimiento y Tick ---
+    // Forge 1.20.1 no tiene EntityTickEvent. PlayerTickEvent no sirve: se dispara dentro de
+    // ServerPlayer.doTick(), tras el cual la conexión devuelve al jugador a su posición de inicio
+    // de tick (absMoveTo) y desharía el teleport al ancla. Al final del tick del servidor se
+    // recorren los jugadores conectados (vivos o muertos), fuera del tick de la conexión.
     @SubscribeEvent
-    public void onEntityTick(EntityTickEvent.Post event) {
-        if (event.getEntity() instanceof ServerPlayer player) {
-            
-            if (isNotAuth(player)) {
-                // Verificar Timeout (Kick) cada 20 ticks (1 segundo) para no saturar
-                if (player.tickCount % 20 == 0) {
-                    if (DirectAuth.getLoginManager().hasTimedOut(player)) {
-                        player.connection.disconnect(Component.literal(DirectAuth.getConfig().getLang().msgTimeout));
-                        return; // Salimos para no ejecutar el resto de lógica
-                    }
+    public void onServerTick(TickEvent.ServerTickEvent event) {
+        if (event.phase != TickEvent.Phase.END) return;
+        for (ServerPlayer player : List.copyOf(event.getServer().getPlayerList().getPlayers())) {
+            tickPlayer(player);
+        }
+    }
+
+    private void tickPlayer(ServerPlayer player) {
+        if (isNotAuth(player)) {
+            // Verificar Timeout (Kick) cada 20 ticks (1 segundo) para no saturar
+            if (player.tickCount % 20 == 0) {
+                if (DirectAuth.getLoginManager().hasTimedOut(player)) {
+                    player.connection.disconnect(Component.literal(DirectAuth.getConfig().getLang().msgTimeout));
+                    return; // Salimos para no ejecutar el resto de lógica
                 }
-
-                UUID uuid = player.getUUID();
-
-                Anchor anchor = anchorPositions.computeIfAbsent(uuid,
-                    id -> new Anchor(player.level().dimension(), player.position()));
-
-                player.setDeltaMovement(Vec3.ZERO);
-
-                Vec3 pos = anchor.position();
-                if (player.level().dimension() != anchor.dimension()) {
-                    // Cambió de dimensión (portal, respawn...): devolverlo a la dimensión del ancla
-                    ServerLevel anchorLevel = player.getServer().getLevel(anchor.dimension());
-                    if (anchorLevel != null) {
-                        player.teleportTo(anchorLevel, pos.x, pos.y, pos.z, player.getYRot(), player.getXRot());
-                    }
-                } else if (player.position().distanceToSqr(pos) > 2.25) {
-                    player.teleportTo(pos.x, pos.y, pos.z);
-                }
-                
-                // Removed player.clearFire() as fire ticks will be restored on authentication.
-                
-                if (player.tickCount % 100 == 0) {
-                    player.displayClientMessage(
-                        Component.literal(DirectAuth.getConfig().getLang().msgAuthReminder),
-                        true 
-                    );
-                }
-            } 
-            else if (anchorPositions.containsKey(player.getUUID())) {
-                anchorPositions.remove(player.getUUID());
             }
+
+            UUID uuid = player.getUUID();
+
+            Anchor anchor = anchorPositions.computeIfAbsent(uuid,
+                id -> new Anchor(player.level().dimension(), player.position()));
+
+            player.setDeltaMovement(Vec3.ZERO);
+
+            Vec3 pos = anchor.position();
+            if (player.level().dimension() != anchor.dimension()) {
+                // Cambió de dimensión (portal, respawn...): devolverlo a la dimensión del ancla
+                ServerLevel anchorLevel = player.getServer().getLevel(anchor.dimension());
+                if (anchorLevel != null) {
+                    player.teleportTo(anchorLevel, pos.x, pos.y, pos.z, player.getYRot(), player.getXRot());
+                }
+            } else if (player.position().distanceToSqr(pos) > 2.25) {
+                player.teleportTo(pos.x, pos.y, pos.z);
+            }
+            
+            // Removed player.clearFire() as fire ticks will be restored on authentication.
+            
+            if (player.tickCount % 100 == 0) {
+                player.displayClientMessage(
+                    Component.literal(DirectAuth.getConfig().getLang().msgAuthReminder),
+                    true 
+                );
+            }
+        } 
+        else if (anchorPositions.containsKey(player.getUUID())) {
+            anchorPositions.remove(player.getUUID());
         }
     }
 
@@ -167,8 +175,8 @@ public class PlayerRestrictionHandler {
         if (event.isMounting() && isNotAuth(event.getEntityMounting())) event.setCanceled(true);
     }
     @SubscribeEvent
-    public void onItemPickup(ItemEntityPickupEvent.Pre event) {
-        if (isNotAuth(event.getPlayer())) event.setCanPickup(TriState.FALSE);
+    public void onItemPickup(EntityItemPickupEvent event) {
+        if (isNotAuth(event.getEntity())) event.setCanceled(true);
     }
     @SubscribeEvent
     public void onXpPickup(PlayerXpEvent.PickupXp event) {
@@ -179,8 +187,8 @@ public class PlayerRestrictionHandler {
         if (isNotAuth(event.getEntity())) event.setCanceled(true);
     }
     @SubscribeEvent
-    public void onDamage(LivingDamageEvent.Pre event) {
-        if (isNotAuth(event.getEntity())) event.setNewDamage(0);
+    public void onDamage(LivingDamageEvent event) {
+        if (isNotAuth(event.getEntity())) event.setAmount(0);
     }
     @SubscribeEvent
     public void onChat(ServerChatEvent event) {

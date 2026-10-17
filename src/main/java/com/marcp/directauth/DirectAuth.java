@@ -14,10 +14,9 @@ import com.marcp.directauth.data.PositionManager;
 import com.marcp.directauth.events.ConnectionHandler;
 import com.marcp.directauth.events.PlayerRestrictionHandler;
 import com.mojang.logging.LogUtils;
-import net.neoforged.bus.api.IEventBus;
-import net.neoforged.fml.common.Mod;
-import net.neoforged.neoforge.common.NeoForge;
-import net.neoforged.neoforge.event.RegisterCommandsEvent;
+import net.minecraftforge.common.MinecraftForge;
+import net.minecraftforge.event.RegisterCommandsEvent;
+import net.minecraftforge.fml.common.Mod;
 import org.slf4j.Logger;
 
 import java.nio.file.Path;
@@ -31,18 +30,18 @@ public class DirectAuth {
     private static LoginManager loginManager;
     private static ModConfig config;
     
-    public DirectAuth(IEventBus modEventBus) {
+    public DirectAuth() {
         loginManager = new LoginManager();
         
-        // Registrar manejadores de eventos en el bus de juego (NeoForge.EVENT_BUS)
+        // Registrar manejadores de eventos en el bus de juego (MinecraftForge.EVENT_BUS)
         // ConnectionHandler gestiona Login/Logout y ServerStarted
-        NeoForge.EVENT_BUS.register(new ConnectionHandler());
+        MinecraftForge.EVENT_BUS.register(new ConnectionHandler());
         
         // PlayerRestrictionHandler gestiona restricciones de movimiento y acciones
-        NeoForge.EVENT_BUS.register(new PlayerRestrictionHandler());
+        MinecraftForge.EVENT_BUS.register(new PlayerRestrictionHandler());
         
         // Registrar comandos cuando el evento se dispare
-        NeoForge.EVENT_BUS.addListener(this::onRegisterCommands);
+        MinecraftForge.EVENT_BUS.addListener(this::onRegisterCommands);
     }
     
     private void onRegisterCommands(RegisterCommandsEvent event) {

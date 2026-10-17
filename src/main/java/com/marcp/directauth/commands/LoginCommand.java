@@ -15,8 +15,15 @@ import net.minecraft.commands.Commands;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.network.protocol.game.ClientboundGameEventPacket;
-import net.minecraft.world.level.portal.DimensionTransition;
+import net.minecraft.core.BlockPos;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.tags.BlockTags;
+import net.minecraft.util.Mth;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.Vec3;
+import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 
 
@@ -128,12 +135,31 @@ public class LoginCommand {
             // Caso: Entró muerto o es nuevo -> Enviar a su punto de reaparición con las reglas de
             // vanilla (que ya aplican al estar autenticado): el nexo necesita carga y la gasta, y
             // una cama/nexo que ya no existe manda al spawn del mundo.
-            DimensionTransition respawn = player.findRespawnPositionAndUseSpawnBlock(false, DimensionTransition.DO_NOTHING);
-            if (respawn.missingRespawnBlock()) {
-                player.connection.send(new ClientboundGameEventPacket(ClientboundGameEventPacket.NO_RESPAWN_BLOCK_AVAILABLE, 0.0F));
+            // (Misma búsqueda que PlayerList.respawn en 1.20.1.)
+            BlockPos respawnPos = player.getRespawnPosition();
+            float respawnAngle = player.getRespawnAngle();
+            ServerLevel respawnLevel = player.getServer().getLevel(player.getRespawnDimension());
+            Optional<Vec3> respawn = respawnLevel != null && respawnPos != null
+                ? Player.findRespawnPositionAndUseSpawnBlock(respawnLevel, respawnPos, respawnAngle, player.isRespawnForced(), false)
+                : Optional.empty();
+            if (respawn.isPresent()) {
+                Vec3 pos = respawn.get();
+                BlockState block = respawnLevel.getBlockState(respawnPos);
+                float yRot = respawnAngle;
+                if (block.is(BlockTags.BEDS) || block.is(Blocks.RESPAWN_ANCHOR)) {
+                    // Mirando hacia la cama / nexo, como vanilla
+                    Vec3 towards = Vec3.atBottomCenterOf(respawnPos).subtract(pos).normalize();
+                    yRot = (float) Mth.wrapDegrees(Mth.atan2(towards.z, towards.x) * (180F / Math.PI) - 90.0D);
+                }
+                player.teleportTo(respawnLevel, pos.x, pos.y, pos.z, yRot, 0.0F);
+            } else {
+                if (respawnPos != null) {
+                    player.connection.send(new ClientboundGameEventPacket(ClientboundGameEventPacket.NO_RESPAWN_BLOCK_AVAILABLE, 0.0F));
+                }
+                ServerLevel overworld = player.getServer().overworld();
+                BlockPos spawnPos = overworld.getSharedSpawnPos();
+                player.teleportTo(overworld, spawnPos.getX() + 0.5, spawnPos.getY(), spawnPos.getZ() + 0.5, 0, 0);
             }
-            Vec3 pos = respawn.pos();
-            player.teleportTo(respawn.newLevel(), pos.x, pos.y, pos.z, respawn.yRot(), respawn.xRot());
         }
 
         // Liberar ancla de restricción y resincronizar efectos

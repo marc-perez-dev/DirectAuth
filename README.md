@@ -4,9 +4,9 @@
 
 ![Build Status](https://github.com/marc-perez-dev/DirectAuth/actions/workflows/build.yml/badge.svg)
 
-DirectAuth is a **server-side** authentication mod for Minecraft NeoForge 1.21.1. It provides a secure login system for offline-mode servers, with optional auto-login for players who own a legitimate Minecraft account.
+DirectAuth is a **server-side** authentication mod for Minecraft Forge 1.20.1 (Forge 47.x, Java 17). This branch is the Forge 1.20.1 port; the NeoForge 1.21.1 version lives on `main`. It provides a secure login system for offline-mode servers, with optional auto-login for players who own a legitimate Minecraft account.
 
-It is strictly server-side: clients do **not** need to install this mod to join. Players can connect with any vanilla client.
+It is strictly server-side: clients do **not** need to install this mod to join. Players connect with whatever the rest of the server requires (a vanilla client if no other mod needs one, or the modpack's client).
 
 All database operations and password hashing run asynchronously, so the main server thread never freezes during logins.
 
@@ -60,7 +60,7 @@ If your server uses **other** mods that store per-player data (e.g. Curios, Astr
 ## Installation
 
 1. Download the `.jar` file.
-2. Place it in the `mods` folder of your NeoForge 1.21.1 server.
+2. Place it in the `mods` folder of your Forge 1.20.1 server.
 3. Restart the server.
 
 On first launch the following files are generated:
@@ -117,8 +117,8 @@ A: The server administrator likely hadn't added that mod's data folder to `migra
 
 ## Compatibility
 
-* **Loader**: NeoForge 1.21.1
-* **Side**: Server-side only — works with any vanilla client and can be included in any modpack.
+* **Loader**: Forge 1.20.1 (47.x), Java 17
+* **Side**: Server-side only — clients don't need it, so it can be added to a modpack's server without changing the client pack.
 * **Supported**: Dedicated servers and local LAN worlds.
 * **Not supported**: BungeeCord/Velocity networks that need player data synchronized across multiple server instances (e.g. Lobby → Survival transfers), since data is stored in the local world directory.
 

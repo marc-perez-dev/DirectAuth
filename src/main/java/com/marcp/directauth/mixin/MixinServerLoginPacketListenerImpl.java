@@ -3,6 +3,7 @@ package com.marcp.directauth.mixin;
 import com.marcp.directauth.DirectAuth;
 import com.marcp.directauth.auth.AuthTasks;
 import com.marcp.directauth.data.UserData;
+import com.mojang.authlib.GameProfile;
 import net.minecraft.network.Connection;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.protocol.login.ClientboundHelloPacket;
@@ -24,7 +25,7 @@ public abstract class MixinServerLoginPacketListenerImpl {
     @Shadow @Final public Connection connection;
     @Shadow private byte[] challenge;
     @Shadow private ServerLoginPacketListenerImpl.State state;
-    @Shadow private String requestedUsername;
+    @Shadow public GameProfile gameProfile;
 
     // Bandera para evitar bucles infinitos (se escribe en el hilo del servidor y se lee en el de red)
     @Unique
@@ -85,14 +86,15 @@ public abstract class MixinServerLoginPacketListenerImpl {
         // Lógica de Premium (Handshake de encriptación)
         if (data != null && data.isPremium() && data.getOnlineUUID() != null) {
             try {
-                this.requestedUsername = username;
+                // Lo mismo que hace vanilla en handleHello con online-mode=true: handleKey lee
+                // el nombre de este perfil para verificar la sesión con Mojang
+                this.gameProfile = new GameProfile(null, username);
                 this.state = ServerLoginPacketListenerImpl.State.KEY;
 
                 this.connection.send(new ClientboundHelloPacket(
                     "", // Server ID vacío usualmente
                     this.server.getKeyPair().getPublic().getEncoded(),
-                    this.challenge,
-                    true
+                    this.challenge
                 ));
 
                 ci.cancel(); // Cancelamos para que Vanilla no intente hacer su propia lógica offline

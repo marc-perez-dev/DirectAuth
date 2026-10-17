@@ -48,7 +48,7 @@ public class StoredLocation {
     }
     
     public void teleportPlayer(ServerPlayer player) {
-        ResourceKey<Level> dimKey = ResourceKey.create(Registries.DIMENSION, ResourceLocation.parse(this.dimension));
+        ResourceKey<Level> dimKey = ResourceKey.create(Registries.DIMENSION, new ResourceLocation(this.dimension));
         ServerLevel targetLevel = player.getServer().getLevel(dimKey);
         
         if (targetLevel != null) {
