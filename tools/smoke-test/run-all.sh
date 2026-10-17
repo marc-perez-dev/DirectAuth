@@ -6,7 +6,7 @@ source "$(dirname "$0")/common.sh"
 [ -d node_modules ] || npm ci || exit 1
 (cd "$REPO" && bash gradlew classes createServerLaunchScript -q) || exit 1
 
-stop_server || exit 1
+stop_server || fail=1
 rm -f server.out server-prev.out server-all.out restart-state.json
 rm -rf "$GAME/world"
 
@@ -16,8 +16,23 @@ echo "=== Live tests"
 node tests.js || fail=1
 echo "=== Restart tests"
 ./restart-run.sh || fail=1
+if [ -n "$DOWNGRADE_REF" ]; then
+  # Volver a una versión anterior (p. ej. DOWNGRADE_REF=main o la última release) y regresar
+  echo "=== Downgrade to $DOWNGRADE_REF and back"
+  OLD="$(mktemp -d)/directauth-old"
+  trap 'git -C "$REPO" worktree remove --force "$OLD" 2>/dev/null' EXIT
+  git -C "$REPO" worktree add --detach -q "$OLD" "$DOWNGRADE_REF" || exit 1
+  (cd "$OLD" && bash gradlew classes createServerLaunchScript -q) || exit 1
+  stop_server || fail=1
+  DIRECTAUTH_SRC="$OLD" start_server || exit 1
+  node restart.js downgrade || fail=1
+  stop_server || fail=1
+  start_server || exit 1
+  node restart.js re-upgrade || fail=1
+fi
+
 echo "=== Turkish locale"
-stop_server || exit 1
+stop_server || fail=1
 JAVA_TOOL_OPTIONS="-Duser.language=tr -Duser.country=TR" start_server || exit 1
 node restart.js tr || fail=1
 stop_server

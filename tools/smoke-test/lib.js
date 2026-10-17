@@ -223,6 +223,20 @@ async function countItem (name, item) {
   const m = r.match(/Found (\d+)/)
   return m ? Number(m[1]) : 0
 }
+/** Verifica un hash como lo hacen DirectAuth 1.1/1.2 (salt:hash, 100k iteraciones): si pasa, volver a esas versiones no deja al jugador fuera. */
+function verifiesLikeOldVersions (storedHash, password) {
+  const parts = String(storedHash).split(':')
+  if (parts.length !== 2) return false
+  const expected = Buffer.from(parts[1], 'base64')
+  const actual = require('crypto').pbkdf2Sync(password, Buffer.from(parts[0], 'base64'), 100000, 32, 'sha256')
+  return expected.length === actual.length && expected.equals(actual)
+}
+
+function schemaVersion () {
+  return db('PRAGMA user_version')[0].user_version
+}
+const dbBackups = () => fs.readdirSync(CFG_DIR).filter((f) => /^directauth-backup-.*\.db$/.test(f))
+
 function near (a, b, tol = 1.5) {
   return a && b && Math.abs(a[0] - b[0]) <= tol && Math.abs(a[1] - b[1]) <= tol && Math.abs(a[2] - b[2]) <= tol
 }
@@ -230,5 +244,5 @@ function near (a, b, tol = 1.5) {
 module.exports = {
   RUN, WORLD, CFG_DIR, sleep, strip, lang, re, join, send, expect, expectNo, expectKick, expectConnected,
   quit, quitAll, rcon, closeRcon, db, user, readConfig, setConfig, offlineUUID, serverLogSince, serverLogSize,
-  test, summary, assert, posOf, dimOf, countItem, near
+  test, summary, assert, posOf, dimOf, countItem, near, verifiesLikeOldVersions, schemaVersion, dbBackups
 }

@@ -70,8 +70,11 @@ async function register (name, ip) {
   } else if (phase === 'before-B') {
     // Ficheros rotos para el próximo arranque (servidor ya parado)
     fs.writeFileSync(POS_FILE, '{"broken": ')
+    // Base de datos "de la 1.2.0": sin versión de esquema
+    T.db('PRAGMA user_version = 0', [], { write: true })
+    const users = T.db('SELECT COUNT(*) AS c FROM users')[0].c
     const good = fs.readFileSync(CFG_FILE, 'utf8')
-    fs.writeFileSync(STATE, JSON.stringify({ goodConfig: good }))
+    fs.writeFileSync(STATE, JSON.stringify({ goodConfig: good, users }))
     fs.writeFileSync(CFG_FILE, '{ "language": "es", "maxLoginAttempts": ')
     const salt = crypto.randomBytes(16)
     const hash = crypto.pbkdf2Sync('legacy9', salt, 10000, 32, 'sha256')
@@ -83,7 +86,17 @@ async function register (name, ip) {
     console.log('prepared broken files')
   } else if (phase === 'after-B') {
     await T.test('after-B: corrupt positions moved aside, legacy JSON imported, malformed config untouched', async () => {
-      const { goodConfig } = JSON.parse(fs.readFileSync(STATE, 'utf8'))
+      const { goodConfig, users } = JSON.parse(fs.readFileSync(STATE, 'utf8'))
+      // Copia automática al actualizar una base de datos de una versión anterior
+      const backups = T.dbBackups()
+      T.assert(backups.length === 1, `expected one automatic backup, got ${backups}`)
+      T.assert(T.schemaVersion() === 1, `schema not upgraded: ${T.schemaVersion()}`)
+      const { DatabaseSync } = require('node:sqlite')
+      const copy = new DatabaseSync(path.join(T.CFG_DIR, backups[0]), { readOnly: true })
+      const copied = copy.prepare('SELECT COUNT(*) AS c FROM users').get().c
+      const copyVersion = copy.prepare('PRAGMA user_version').get().user_version
+      copy.close()
+      T.assert(copied === users && copyVersion === 0, `backup has ${copied}/${users} users, schema ${copyVersion}`)
       const files = fs.readdirSync(T.CFG_DIR)
       T.assert(files.some((f) => f.startsWith('DirectAuth_positions.json.corrupt-')), `no .corrupt file: ${files}`)
       T.assert(files.includes('DirectAuth_users.json.MIGRATED') && !files.includes('DirectAuth_users.json'), `legacy JSON not migrated: ${files}`)
@@ -93,10 +106,37 @@ async function register (name, ip) {
       T.send(b, '/login legacy9')
       await T.expect(b, L.msgAuthenticated)
       await T.sleep(800)
-      T.assert(T.user('JsonUser').passwordHash.split(':').length === 3, 'legacy hash not upgraded')
+      T.assert(T.verifiesLikeOldVersions(T.user('JsonUser').passwordHash, 'legacy9'), 'legacy hash not upgraded to the 1.1/1.2 format')
       fs.writeFileSync(CFG_FILE, goodConfig)
       const out = await T.rcon('directauth reload')
       T.assert(T.re(L.msgConfigReloaded).test(out), `reload after fixing: ${out}`)
+    })
+  } else if (phase === 'downgrade') {
+    // Servidor arrancado con una versión anterior (DOWNGRADE_REF) sobre el mismo mundo
+    await T.test('downgrade: accounts written by this version still log in on the previous version', async () => {
+      const accounts = [
+        ['RegA', PW], // registrada con esta versión
+        ['OldTen', 'legacy1'], // hash de la 1.0.0 actualizado por esta versión
+        ['OldDev', 'legacy1'], // hash de 3 partes normalizado por esta versión
+        ['Lock', 'newpass1'] // contraseña cambiada con /directauth resetpass en esta versión
+      ]
+      let ip = 130
+      for (const [name, pw] of accounts) {
+        const b = await joinOk(name, `127.0.0.${ip++}`)
+        await T.expect(b, L.msgLoginRequest)
+        T.send(b, `/login ${pw}`)
+        await T.expect(b, L.msgAuthenticated)
+        await T.quit(b)
+      }
+    })
+  } else if (phase === 're-upgrade') {
+    await T.test('re-upgrade: back on this version, no new backup and logins still work', async () => {
+      T.assert(T.schemaVersion() === 1, `schema ${T.schemaVersion()}`)
+      T.assert(T.dbBackups().length === 1, `backups: ${T.dbBackups()}`)
+      const b = await joinOk('RegA', '127.0.0.140')
+      await T.expect(b, L.msgLoginRequest)
+      T.send(b, `/login ${PW}`)
+      await T.expect(b, L.msgAuthenticated)
     })
   } else if (phase === 'tr') {
     await T.test('turkish locale: legacy rows lowercased with the system locale are still found', async () => {
@@ -115,7 +155,7 @@ async function register (name, ip) {
         await T.expectKick(b, L.msgLogoutSuccess)
       }
       const rows = T.db("SELECT username, passwordHash FROM users WHERE username IN ('ıvan', 'ivan')")
-      T.assert(rows.length === 1 && rows[0].username === 'ıvan' && rows[0].passwordHash.split(':').length === 3, `rows: ${JSON.stringify(rows)}`)
+      T.assert(rows.length === 1 && rows[0].username === 'ıvan' && T.verifiesLikeOldVersions(rows[0].passwordHash, 'legacy7'), `rows: ${JSON.stringify(rows)}`)
       // Una cuenta nueva con 'I' se guarda con Locale.ROOT y se encuentra con cualquier mayúscula
       const g = await joinOk('IGOR', '127.0.0.98')
       await T.sleep(1100)

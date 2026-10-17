@@ -68,7 +68,7 @@ const rconTest = async (cmd) => /Test passed/.test(await T.rcon(cmd))
     T.send(b, `/register ${PW}`)
     await T.expect(b, L.msgRegistered)
     const u = T.user('RegA')
-    T.assert(u && u.passwordHash.startsWith('100000:') && u.passwordHash.split(':').length === 3, `bad hash ${u && u.passwordHash}`)
+    T.assert(u && T.verifiesLikeOldVersions(u.passwordHash, PW), `hash not readable by 1.1/1.2: ${u && u.passwordHash}`)
     T.assert(u.registrationIp === '127.0.0.3', `bad ip ${u.registrationIp}`)
     T.send(b, `/register ${PW}`)
     await T.expect(b, L.errAlreadyAuthenticated)
@@ -461,11 +461,20 @@ const rconTest = async (cmd) => /Test passed/.test(await T.rcon(cmd))
   })
 
   // ========== Hashes antiguos ==========
-  await test('legacy salt:hash (10k and 100k) still log in and get upgraded', async () => {
-    for (const [name, iters] of [['OldTen', 10000], ['OldHund', 100000]]) {
+  await test('legacy hashes log in and end up in the format 1.1/1.2 can read', async () => {
+    const make = (iters) => {
       const salt = crypto.randomBytes(16)
       const hash = crypto.pbkdf2Sync('legacy1', salt, iters, 32, 'sha256')
-      T.db('INSERT INTO users(username, passwordHash, isPremium) VALUES(?, ?, 0)', [name.toLowerCase(), salt.toString('base64') + ':' + hash.toString('base64')], { write: true })
+      return salt.toString('base64') + ':' + hash.toString('base64')
+    }
+    // [nombre, hash guardado, ¿debe reescribirse?]
+    const cases = [
+      ['OldTen', make(10000), true], // DirectAuth 1.0.0
+      ['OldHund', make(100000), false], // 1.1/1.2: ya es el formato actual
+      ['OldDev', '100000:' + make(100000), true] // compilaciones previas a la publicación
+    ]
+    for (const [name, stored, rewritten] of cases) {
+      T.db('INSERT INTO users(username, passwordHash, isPremium) VALUES(?, ?, 0)', [name.toLowerCase(), stored], { write: true })
       const b = await joinOk(name, '127.0.0.39')
       await T.expect(b, L.msgLoginRequest)
       T.send(b, '/login wrongpw')
@@ -475,9 +484,15 @@ const rconTest = async (cmd) => /Test passed/.test(await T.rcon(cmd))
       await T.expect(b, L.msgAuthenticated)
       await T.sleep(800)
       const h = T.user(name).passwordHash
-      T.assert(h.startsWith('100000:') && h.split(':').length === 3, `${name} not upgraded: ${h}`)
+      T.assert(T.verifiesLikeOldVersions(h, 'legacy1'), `${name}: hash not readable by 1.1/1.2: ${h}`)
+      T.assert((h !== stored) === rewritten, `${name}: ${rewritten ? 'not rewritten' : 'rewritten for no reason'}`)
       await T.quit(b)
     }
+  })
+
+  await test('database: a fresh database gets the current schema and no backup', async () => {
+    T.assert(T.schemaVersion() === 1, `user_version ${T.schemaVersion()}`)
+    T.assert(T.dbBackups().length === 0, `unexpected backups: ${T.dbBackups()}`)
   })
 
   // ========== Premium ==========

@@ -5,10 +5,10 @@ source "$(dirname "$0")/common.sh"
 
 fail=0
 node restart.js before-A || exit 1   # para el servidor ella misma
-wait_down || exit 1
+wait_down || fail=1
 start_server || exit 1
 node restart.js after-A || fail=1
-stop_server || exit 1
+stop_server || fail=1
 node restart.js before-B || exit 1
 start_server || exit 1
 node restart.js after-B || fail=1
