@@ -382,9 +382,10 @@ public class LoginManager {
         RANDOM.nextBytes(salt);
         byte[] hash = pbkdf2(password.toCharArray(), salt, ITERATIONS);
 
-        // Formato: iteraciones:salt:hash (Base64)
-        return ITERATIONS + ":" +
-               Base64.getEncoder().encodeToString(salt) + ":" +
+        // Formato: salt:hash (Base64). Es el que leen DirectAuth 1.1 y 1.2 (que asumen 100k
+        // iteraciones), así que volver a una versión anterior no deja a nadie sin poder entrar.
+        // Subir ITERATIONS rompería esa compatibilidad: haría falta un formato que las incluya.
+        return Base64.getEncoder().encodeToString(salt) + ":" +
                Base64.getEncoder().encodeToString(hash);
     }
 
@@ -392,18 +393,15 @@ public class LoginManager {
         if (storedHash == null) return PasswordCheck.WRONG;
         String[] parts = storedHash.split(":");
         try {
-            if (parts.length == 3) {
-                int iterations = Integer.parseInt(parts[0]);
-                if (iterations <= 0) return PasswordCheck.WRONG;
-                if (!matches(password, parts[1], parts[2], iterations)) return PasswordCheck.WRONG;
-                return iterations == ITERATIONS ? PasswordCheck.OK : PasswordCheck.OK_NEEDS_REHASH;
-            }
             if (parts.length == 2) {
-                // Formato antiguo salt:hash sin iteraciones: 10k en la 1.0.0, 100k en las siguientes
-                if (matches(password, parts[0], parts[1], ITERATIONS)
-                        || matches(password, parts[0], parts[1], LEGACY_ITERATIONS)) {
-                    return PasswordCheck.OK_NEEDS_REHASH;
-                }
+                if (matches(password, parts[0], parts[1], ITERATIONS)) return PasswordCheck.OK;
+                // Hash de la 1.0.0 (10k iteraciones, una décima parte del coste de probar las 100k)
+                if (matches(password, parts[0], parts[1], LEGACY_ITERATIONS)) return PasswordCheck.OK_NEEDS_REHASH;
+            } else if (parts.length == 3) {
+                // iteraciones:salt:hash, escrito por compilaciones de desarrollo previas a la
+                // publicación; se reescribe en el formato compatible con versiones anteriores
+                int iterations = Integer.parseInt(parts[0]);
+                if (iterations > 0 && matches(password, parts[1], parts[2], iterations)) return PasswordCheck.OK_NEEDS_REHASH;
             }
         } catch (IllegalArgumentException e) {
             // Hash corrupto (Base64 o número inválido)

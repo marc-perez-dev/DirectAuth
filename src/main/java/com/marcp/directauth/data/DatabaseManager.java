@@ -7,6 +7,8 @@ import java.nio.file.Path;
 import java.sql.*;
 import java.io.IOException;
 import java.nio.file.Files;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import com.google.gson.Gson;
 import com.google.gson.JsonParseException;
 import com.google.gson.reflect.TypeToken;
@@ -27,6 +29,16 @@ import java.util.concurrent.TimeUnit;
  */
 public class DatabaseManager {
     private static final Logger LOGGER = LogUtils.getLogger();
+
+    /**
+     * Versión del esquema, guardada en PRAGMA user_version (0 = DirectAuth 1.2.0 o anterior).
+     * Súbela con cada cambio de esquema: al arrancar con una base de datos de una versión
+     * anterior se guarda antes una copia automática (ver {@link #backupBeforeUpgrade}).
+     */
+    private static final int SCHEMA_VERSION = 1;
+    private static final DateTimeFormatter BACKUP_TIMESTAMP = DateTimeFormatter.ofPattern("yyyy-MM-dd_HH-mm-ss");
+
+    private final Path dbPath;
     private final String connectionString;
     private Connection connection;
     private final ExecutorService dbExecutor = Executors.newSingleThreadExecutor(runnable -> {
@@ -45,7 +57,7 @@ public class DatabaseManager {
 
     public DatabaseManager(Path worldPath) {
         // Guardamos en world/serverconfig/directauth.db
-        Path dbPath = worldPath.resolve("serverconfig").resolve("directauth.db");
+        this.dbPath = worldPath.resolve("serverconfig").resolve("directauth.db");
         this.connectionString = "jdbc:sqlite:" + dbPath.toString();
 
         initDatabase();
@@ -64,6 +76,15 @@ public class DatabaseManager {
 
             // 2. Establecemos conexión
             connection = DriverManager.getConnection(connectionString);
+
+            // 3. Copia de seguridad si la base de datos es de una versión anterior del mod
+            int storedVersion = readSchemaVersion();
+            if (storedVersion < SCHEMA_VERSION && usersTableExists()) {
+                backupBeforeUpgrade(storedVersion);
+            } else if (storedVersion > SCHEMA_VERSION) {
+                LOGGER.warn("DirectAuth: directauth.db was last used by a newer version of DirectAuth (schema {}, this version understands {}). If something does not work, restore the backup that version made before upgrading.",
+                        storedVersion, SCHEMA_VERSION);
+            }
 
             try (Statement stmt = connection.createStatement()) {
                 // Creamos la tabla si no existe
@@ -92,11 +113,47 @@ public class DatabaseManager {
                 } catch (SQLException ignored) {
                     // La columna ya existe, no hacemos nada.
                 }
+
+                if (storedVersion < SCHEMA_VERSION) {
+                    stmt.execute("PRAGMA user_version = " + SCHEMA_VERSION);
+                }
             }
         } catch (ClassNotFoundException e) {
             throw new RuntimeException("CRITICAL: SQLite driver not found. Make sure the library is bundled with the mod.", e);
         } catch (SQLException e) {
             throw new RuntimeException("CRITICAL: Failed to connect to the SQLite database.", e);
+        }
+    }
+
+    private int readSchemaVersion() throws SQLException {
+        try (Statement stmt = connection.createStatement(); ResultSet rs = stmt.executeQuery("PRAGMA user_version")) {
+            return rs.next() ? rs.getInt(1) : 0;
+        }
+    }
+
+    private boolean usersTableExists() throws SQLException {
+        try (PreparedStatement pstmt = connection.prepareStatement("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'users'");
+             ResultSet rs = pstmt.executeQuery()) {
+            return rs.next();
+        }
+    }
+
+    /**
+     * Guarda una copia de la base de datos tal como estaba antes de actualizar el esquema, para
+     * poder volver a la versión anterior del mod sin depender de que el admin hiciera una copia.
+     * Si falla, se registra y se sigue: la actualización no impide usar versiones anteriores.
+     */
+    private void backupBeforeUpgrade(int storedVersion) {
+        Path backup = dbPath.resolveSibling("directauth-backup-" + LocalDateTime.now().format(BACKUP_TIMESTAMP) + ".db");
+        // VACUUM INTO hace una copia consistente a través de SQLite (no copia el fichero a medias)
+        try (PreparedStatement pstmt = connection.prepareStatement("VACUUM INTO ?")) {
+            pstmt.setString(1, backup.toString());
+            pstmt.execute();
+            LOGGER.info("DirectAuth: Upgrading directauth.db from schema {} to {}. A copy of the previous database was saved as {}",
+                    storedVersion, SCHEMA_VERSION, backup.getFileName());
+        } catch (SQLException e) {
+            LOGGER.error("DirectAuth: Could not back up directauth.db before upgrading it from schema {} to {}: {}",
+                    storedVersion, SCHEMA_VERSION, e.getMessage());
         }
     }
 

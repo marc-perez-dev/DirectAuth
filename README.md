@@ -109,8 +109,9 @@ A: The server administrator likely hadn't added that mod's data folder to `migra
 
 ## Technical Details
 
-* **Hashing**: PBKDF2WithHmacSHA256 (100,000 iterations) with a unique salt per user, stored as `iterations:salt:hash`. Older hashes without the iteration count (including the 10,000-iteration hashes from 1.0.0) are still accepted and upgraded on the next login.
+* **Hashing**: PBKDF2WithHmacSHA256 (100,000 iterations) with a unique salt per user, stored as `salt:hash`. The 10,000-iteration hashes from 1.0.0 are still accepted and upgraded on the next login.
 * **Storage**: SQLite at `world/serverconfig/directauth.db` — no external database server. A legacy `DirectAuth_users.json` is migrated automatically on first run if present.
+* **Upgrades**: When a new version changes the database, DirectAuth first saves a copy of it as `world/serverconfig/directauth-backup-<date>.db`; no manual backup is needed. Passwords stay in the format older versions read, so going back to 1.1 or 1.2 only takes swapping the jar.
 * **Session Management**: Sessions are validated against the internal database (and Mojang's session servers for online users).
 * **Protection**: The login listener is injected at high priority to prevent unauthorized packet processing.
 
