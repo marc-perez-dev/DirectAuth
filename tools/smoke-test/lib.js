@@ -58,7 +58,7 @@ function join (username, ip = '127.0.0.1', { timeout = 20000, options = {} } = {
       username,
       host: '127.0.0.1',
       port: 25565,
-      version: '1.21.1',
+      version: '1.20.1',
       auth: 'offline',
       hideErrors: true,
       connect: (client) => client.setSocket(net.connect({ host: '127.0.0.1', port: 25565, localAddress: ip })),

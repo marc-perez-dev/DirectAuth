@@ -24,6 +24,7 @@ wait_down () {
 # Arranca el servidor en segundo plano y espera a RCON. Guarda el log anterior en server-prev.out
 # y lo acumula en server-all.out
 start_server () {
+  ./server.sh install || return 1   # la primera vez descarga e instala Forge (varios minutos)
   if [ -f server.out ]; then cat server.out >> server-all.out; mv server.out server-prev.out; fi
   setsid nohup ./server.sh > server.out 2>&1 < /dev/null &
   for i in $(seq 1 180); do

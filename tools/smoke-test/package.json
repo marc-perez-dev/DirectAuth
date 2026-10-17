@@ -1,7 +1,7 @@
 {
   "name": "directauth-smoke-test",
   "private": true,
-  "description": "End-to-end smoke tests for DirectAuth against a real dev server, driven by Mineflayer bots",
+  "description": "End-to-end smoke tests for DirectAuth against a production Forge 1.20.1 server, driven by Mineflayer bots",
   "scripts": {
     "test": "./run-all.sh"
   },

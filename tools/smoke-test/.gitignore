@@ -3,3 +3,4 @@ console
 *.out
 restart-state.json
 hang-*.txt
+*.log

@@ -1,7 +1,8 @@
 # DirectAuth smoke tests
 
-End-to-end tests against a real server. `run-all.sh` builds the mod from this checkout, starts the
-NeoForge dev server (offline mode, flat world) in `runs/smoke-test/`, and drives it with
+End-to-end tests against a real server. `run-all.sh` builds the mod from this checkout, starts a
+production Forge 1.20.1-47.4.0 server (offline mode, flat world) in `runs/smoke-test/` with the
+built jar in `mods/`, and drives it with
 [Mineflayer](https://github.com/PrismarineJS/mineflayer) bots, RCON and direct checks on the
 SQLite database and the world files. Bots connect from different loopback addresses
 (`127.0.0.x`) to simulate players on different IPs.
@@ -10,6 +11,9 @@ SQLite database and the world files. Bots connect from different loopback addres
 
 - Linux (uses the `127.0.0.0/8` loopback range, `mkfifo` and `setsid`).
 - Node.js 22.5 or newer (`node:sqlite`).
+- Java 17: the one Gradle's toolchain downloads (`~/.gradle/jdks`) is used, or set `JAVA17=/path/to/java`.
+- The first run downloads the Forge installer and installs the server in `runs/smoke-test/`
+  (a few minutes).
 - Ports 25565 and 25575 free on `127.0.0.1`.
 - Internet access: the premium tests query the Mojang API and session server with the real
   account name `Notch` (lookup only, nobody logs into that account).
@@ -32,7 +36,8 @@ DOWNGRADE_REF=main ./run-all.sh   # any git ref: a release tag, a commit, a bran
 ```
 
 It builds that ref in a temporary `git worktree`, runs it against the same world, logs in with
-accounts written by this version, then starts this version again.
+accounts written by this version, then starts this version again. The ref must be a Forge 1.20.1
+build of DirectAuth (this branch); `main` is the NeoForge 1.21.1 version and cannot run here.
 
 To work on a single test against the current world:
 
@@ -53,7 +58,7 @@ accounts, some tests take fresh names from the environment: `JAIL`, `JAIL_IP`, `
 | `tests.js` | Tests against a running server (registration, login, lockout, jail, respawn, sessions, admin commands, premium migration, legacy hashes, config, RCON, races). |
 | `restart.js` | Phases that need restarts: shutdown with a `/login` in flight, positions surviving a restart, automatic database backup when upgrading an older schema, corrupt `positions.json`, legacy `DirectAuth_users.json` import, malformed config at startup, downgrade and re-upgrade, Turkish locale. |
 | `lib.js` | Helpers: bots, message expectations, RCON, SQLite, player state. |
-| `server.sh` | Starts the server like `runServer` but in `runs/smoke-test/`, without GUI, with the console read from the `console` FIFO. |
+| `server.sh` | Installs Forge the first time (`./server.sh install`), copies the mod jar from `build/libs` into `runs/smoke-test/mods` and starts the production server without GUI, with the console read from the `console` FIFO. It tests the reobfuscated jar, not the dev environment: only there are the mixin refmap, the `MixinConfigs` manifest and the jar-in-jar SQLite driver exercised. |
 | `common.sh`, `run-all.sh`, `restart-run.sh`, `up.sh`, `down.sh` | Orchestration. |
 
 `server.out` (current server log), `server-all.out` (all restarts of the last run) and
