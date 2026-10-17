@@ -8,6 +8,7 @@
     "MixinLivingEntityEffects",
     "MixinServerPlayerRespawn",
     "MixinServerGamePacketListenerImpl",
+    "MixinRconConsoleSource",
     "PlayerListAccessor"
   ],
   "injectors": {

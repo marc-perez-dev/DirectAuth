@@ -6,9 +6,12 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.server.network.ServerGamePacketListenerImpl;
+import net.minecraft.server.rcon.RconConsoleSource;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
@@ -72,22 +75,87 @@ public final class AuthTasks {
         }, onServerThread(server));
     }
 
-    /** Igual que {@link #finish} pero para comandos de admin (la fuente puede ser la consola). */
+    /**
+     * Igual que {@link #finish} pero para comandos de admin (la fuente puede ser la consola o RCON).
+     * Si la fuente es RCON, la respuesta espera a que termine la operación (ver
+     * {@link #awaitRconOperations}); si no, el resultado se perdería.
+     */
     public static <T> void finish(CommandSourceStack source, CompletableFuture<T> future, Consumer<T> onSuccess) {
+        Object rconToken = source.source instanceof RconConsoleSource ? rconOperationStarted() : null;
         future.whenCompleteAsync((result, error) -> {
-            Throwable failure = error;
-            if (failure == null) {
-                try {
-                    onSuccess.accept(result);
-                } catch (RuntimeException e) {
-                    failure = e;
+            try {
+                Throwable failure = error;
+                if (failure == null) {
+                    try {
+                        onSuccess.accept(result);
+                    } catch (RuntimeException e) {
+                        failure = e;
+                    }
                 }
-            }
-            if (failure != null) {
-                DirectAuth.LOGGER.error("DirectAuth: Admin operation failed", failure);
-                source.sendFailure(Component.literal(DirectAuth.getConfig().getLang().errInternal));
+                if (failure != null) {
+                    DirectAuth.LOGGER.error("DirectAuth: Admin operation failed", failure);
+                    source.sendFailure(Component.literal(DirectAuth.getConfig().getLang().errInternal));
+                }
+            } finally {
+                // Después del callback: si encadenó otra operación, esa ya está registrada
+                if (rconToken != null) rconOperationFinished(rconToken);
             }
         }, onServerThread(source.getServer()));
+    }
+
+    // --- Respuesta de RCON ---
+    // Vanilla ejecuta el comando RCON en el hilo del servidor y lee el búfer de respuesta en
+    // cuanto el comando retorna, antes de que terminen las operaciones asíncronas. Por eso el
+    // hilo de RCON (no el del servidor) espera a las operaciones que lanzó el comando.
+
+    /** Lo que espera una respuesta de RCON como máximo (cubre la consulta a Mojang). */
+    private static final long RCON_WAIT_MS = 30_000;
+    private static final Set<Object> rconPending = new HashSet<>(); // protegido por sí mismo
+
+    private static Object rconOperationStarted() {
+        Object token = new Object();
+        synchronized (rconPending) {
+            rconPending.add(token);
+        }
+        return token;
+    }
+
+    private static void rconOperationFinished(Object token) {
+        synchronized (rconPending) {
+            rconPending.remove(token);
+            rconPending.notifyAll();
+        }
+    }
+
+    /** Al empezar cada comando RCON: las operaciones de comandos anteriores ya no se esperan. */
+    public static void resetRconOperations() {
+        synchronized (rconPending) {
+            rconPending.clear();
+            rconPending.notifyAll();
+        }
+    }
+
+    /**
+     * Bloquea el hilo de RCON hasta que terminen las operaciones lanzadas por el comando actual
+     * (o hasta {@link #RCON_WAIT_MS}). NUNCA llamar desde el hilo del servidor: es el que las completa.
+     */
+    public static void awaitRconOperations() {
+        long deadline = System.currentTimeMillis() + RCON_WAIT_MS;
+        synchronized (rconPending) {
+            while (!rconPending.isEmpty()) {
+                long remaining = deadline - System.currentTimeMillis();
+                if (remaining <= 0) {
+                    DirectAuth.LOGGER.warn("DirectAuth: RCON response sent before the command finished; its result will only appear in the server log");
+                    return;
+                }
+                try {
+                    rconPending.wait(remaining);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    return;
+                }
+            }
+        }
     }
 
     /** Jugadores conectados con esta cuenta (todas las variantes de mayúsculas del nombre). */
