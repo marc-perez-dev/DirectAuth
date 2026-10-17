@@ -49,7 +49,7 @@ node tests.js 'lockout'   # regex on test names
 
 Tests assume a fresh world. When re-running a test against a world that already has its
 accounts, some tests take fresh names from the environment: `JAIL`, `JAIL_IP`, `DEAD`, `DEAD_IP`,
-`DEAD_IP2`, `PICK`.
+`DEAD_IP2`, `NOBED`, `PICK`.
 
 ## Files
 

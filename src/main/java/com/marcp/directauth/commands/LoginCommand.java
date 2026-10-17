@@ -10,6 +10,7 @@ import com.marcp.directauth.auth.LoginManager.PasswordCheck;
 import com.marcp.directauth.config.LangConfig;
 import com.marcp.directauth.data.UserData;
 import com.marcp.directauth.events.PlayerRestrictionHandler;
+import com.marcp.directauth.mixin.ServerPlayerAccessor;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.network.chat.Component;
@@ -153,12 +154,19 @@ public class LoginCommand {
                 }
                 player.teleportTo(respawnLevel, pos.x, pos.y, pos.z, yRot, 0.0F);
             } else {
-                if (respawnPos != null) {
+                if (respawnLevel != null && respawnPos != null) {
                     player.connection.send(new ClientboundGameEventPacket(ClientboundGameEventPacket.NO_RESPAWN_BLOCK_AVAILABLE, 0.0F));
                 }
+                // Spawn del mundo con la colocación de vanilla (radio de spawn, sin colisiones).
+                // fudgeSpawnLocation solo mueve la entidad: primero se pasa al Overworld y al
+                // final se teletransporta para sincronizar al cliente.
                 ServerLevel overworld = player.getServer().overworld();
-                BlockPos spawnPos = overworld.getSharedSpawnPos();
-                player.teleportTo(overworld, spawnPos.getX() + 0.5, spawnPos.getY(), spawnPos.getZ() + 0.5, 0, 0);
+                if (player.level() != overworld) {
+                    BlockPos spawnPos = overworld.getSharedSpawnPos();
+                    player.teleportTo(overworld, spawnPos.getX() + 0.5, spawnPos.getY(), spawnPos.getZ() + 0.5, 0, 0);
+                }
+                ((ServerPlayerAccessor) player).callFudgeSpawnLocation(overworld);
+                player.teleportTo(overworld, player.getX(), player.getY(), player.getZ(), 0, 0);
             }
         }
 

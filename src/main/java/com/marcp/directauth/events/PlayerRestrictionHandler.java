@@ -15,8 +15,8 @@ import net.minecraftforge.event.CommandEvent;
 import net.minecraftforge.event.ServerChatEvent;
 import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.event.entity.EntityMountEvent;
-import net.minecraftforge.event.entity.living.LivingDamageEvent;
 import net.minecraftforge.event.entity.living.LivingHealEvent;
+import net.minecraftforge.event.entity.living.LivingHurtEvent;
 import net.minecraftforge.event.entity.player.AttackEntityEvent;
 import net.minecraftforge.event.entity.player.EntityItemPickupEvent;
 import net.minecraftforge.event.entity.player.PlayerInteractEvent;
@@ -91,12 +91,14 @@ public class PlayerRestrictionHandler {
     // Forge 1.20.1 no tiene EntityTickEvent. PlayerTickEvent no sirve: se dispara dentro de
     // ServerPlayer.doTick(), tras el cual la conexión devuelve al jugador a su posición de inicio
     // de tick (absMoveTo) y desharía el teleport al ancla. Al final del tick del servidor se
-    // recorren los jugadores conectados (vivos o muertos), fuera del tick de la conexión.
+    // recorren los jugadores conectados, fuera del tick de la conexión.
     @SubscribeEvent
     public void onServerTick(TickEvent.ServerTickEvent event) {
         if (event.phase != TickEvent.Phase.END) return;
         for (ServerPlayer player : List.copyOf(event.getServer().getPlayerList().getPlayers())) {
-            tickPlayer(player);
+            // Como EntityTickEvent: solo jugadores que el nivel sigue tickeando (un jugador muerto
+            // sale del nivel tras la animación de muerte y su tickCount deja de avanzar)
+            if (!player.isRemoved()) tickPlayer(player);
         }
     }
 
@@ -187,7 +189,9 @@ public class PlayerRestrictionHandler {
         if (isNotAuth(event.getEntity())) event.setCanceled(true);
     }
     @SubscribeEvent
-    public void onDamage(LivingDamageEvent event) {
+    public void onDamage(LivingHurtEvent event) {
+        // LivingHurtEvent y no LivingDamageEvent: en 1.20.1 este último llega cuando ya se han
+        // gastado los corazones de absorción (LivingDamageEvent.Pre de NeoForge llega antes)
         if (isNotAuth(event.getEntity())) event.setAmount(0);
     }
     @SubscribeEvent

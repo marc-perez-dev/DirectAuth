@@ -42,7 +42,7 @@ cat server.out >> server-all.out
 # configs y ficheros corruptos); el resto merece un vistazo
 echo "=== DirectAuth warnings/errors in the server log (some are expected, see README)"
 grep -a -E 'DirectAuth|directauth' server-all.out | grep -a -E '/ERROR|/WARN|Exception' \
-  | grep -a -v -E 'refmap|Invalid session attempt' | cut -c1-200 | sed -E 's/^\[[0-9:]+\] //' | sort | uniq -c | sort -rn
+  | grep -a -v -E 'refmap|Invalid session attempt|runs/smoke-test/libraries' | cut -c1-200 | sed -E 's/^\[[0-9:]+\] //' | sort | uniq -c | sort -rn
 echo "=== Exceptions (any source)"
 grep -a -E 'Exception|Caused by' server-all.out | grep -a -v DEBUG | cut -c1-200 | sed -E 's/^\[[0-9:]+\] //' | sort | uniq -c | sort -rn | head -20
 

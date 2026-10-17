@@ -11,7 +11,8 @@
     "MixinPlayerListRespawn",
     "MixinServerGamePacketListenerImpl",
     "MixinRconConsoleSource",
-    "PlayerListAccessor"
+    "PlayerListAccessor",
+    "ServerPlayerAccessor"
   ],
   "injectors": {
     "defaultRequire": 1

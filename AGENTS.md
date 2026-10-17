@@ -24,7 +24,7 @@ Authoritative values live in `gradle.properties`; the table below is a quick ref
 | Item | Value |
 |---|---|
 | Minecraft | `1.20.1` (range `[1.20.1,1.20.2)`) |
-| Forge | `47.4.0` (range `[47,)`) |
+| Forge | `47.4.0` (range `[47.4.0,)`, the version it is built and tested against) |
 | Java | 17 (toolchain pinned) |
 | Loader | `javafml`, range `[47,)` |
 | Parchment mappings | `2023.09.03` for MC `1.20.1` |
@@ -52,7 +52,7 @@ DirectAuth/
 │   │   │   ├── config/               # ModConfig, LangConfig (Gson JSON)
 │   │   │   ├── data/                 # DatabaseManager (SQLite), PositionManager, MigrationManager, UserData, StoredLocation
 │   │   │   ├── events/               # ConnectionHandler, PlayerRestrictionHandler
-│   │   │   └── mixin/                # login handshake, packet restrictions, respawn, effects, RCON response, PlayerListAccessor
+│   │   │   └── mixin/                # login handshake, packet restrictions, respawn, effects, RCON response, accessors
 │   │   ├── resources/
 │   │   │   ├── META-INF/             # accesstransformer.cfg; mods.toml is generated from templates/
 │   │   │   ├── pack.mcmeta           # required by Forge 1.20.1 for the mod's resource/data pack
@@ -64,7 +64,7 @@ DirectAuth/
 ├── tools/smoke-test/         # end-to-end tests: production Forge server + Mineflayer bots (see its README)
 ├── run/  runs/  run-data/    # gitignored dev runtime dirs (the smoke test uses runs/smoke-test/)
 ├── build/  .gradle/  repo/   # gitignored gradle output
-├── .github/workflows/build.yml  # CI: gradlew build on push/PR (Ubuntu, Temurin 21)
+├── .github/workflows/build.yml  # CI: gradlew build on push/PR (Ubuntu, Temurin 17)
 ├── AGENTS.md                 # ← you are here
 └── README.md
 ```
@@ -108,15 +108,16 @@ All Brigadier-based. Registered through `RegisterCommandsEvent` in `DirectAuth`.
 
 ### 4.4 `events/`
 - **`ConnectionHandler`** — `ServerStartedEvent` (fresh `LoginManager`, init DB/config/scheduler), `ServerStoppedEvent` (close DB, shut down `LoginManager`, clear anchors/confirmations; runs *after* players are disconnected), `PlayerLoggedInEvent` (consume mixin pre-cache, attempt grace-session restore only if the account exists, otherwise teleport to spawn, save original position and reset the anchor), `PlayerLoggedOutEvent` (pause session if authenticated, else drop).
-- **`PlayerRestrictionHandler`** — enforces the unauthenticated-player jail. `isRestricted(entity)` is the single check (real `ServerPlayer`, **not a `FakePlayer`**, not authenticated) — mixins use it too. Anchors players with a `Map<UUID, Anchor(dimension, Vec3)>` from `TickEvent.ServerTickEvent` (END), iterating the connected players (teleports back across dimensions if needed). **Not** `PlayerTickEvent`: it fires inside `ServerPlayer.doTick()`, after which the connection resets the player to its start-of-tick position and would undo the anchor teleport, cancels block break, left/right click, entity interact (incl. `EntityInteractSpecific` for armor stands), item pickup (`EntityItemPickupEvent`), XP pickup, mount, attack, all chat (commands are filtered separately in `CommandEvent`: only `register`/`login`/`online`), damage (`LivingDamageEvent` amount set to 0), and healing. Item drops and inventory/container clicks are blocked at the packet level by `MixinServerGamePacketListenerImpl` — **don't** handle `ItemTossEvent`: the game itself fires it for drops (closing menus on disconnect, `/give`). `release(player)` removes the anchor and resyncs effects after authentication. Sends the auth reminder every ~5 seconds (100 ticks). Kicks if `loginTimeout` elapsed.
+- **`PlayerRestrictionHandler`** — enforces the unauthenticated-player jail. `isRestricted(entity)` is the single check (real `ServerPlayer`, **not a `FakePlayer`**, not authenticated) — mixins use it too. Anchors players with a `Map<UUID, Anchor(dimension, Vec3)>` from `TickEvent.ServerTickEvent` (END), iterating the connected players that are still ticked by their level (`!isRemoved()`, like `EntityTickEvent` on `main`; teleports back across dimensions if needed). **Not** `PlayerTickEvent`: it fires inside `ServerPlayer.doTick()`, after which the connection resets the player to its start-of-tick position and would undo the anchor teleport. It also cancels block break, left/right click, entity interact (incl. `EntityInteractSpecific` for armor stands), item pickup (`EntityItemPickupEvent`), XP pickup, mount, attack, all chat (commands are filtered separately in `CommandEvent`: only `register`/`login`/`online`), damage (`LivingHurtEvent` amount set to 0, before absorption hearts are spent — `LivingDamageEvent` fires after that in 1.20.1), and healing. Item drops and inventory/container clicks are blocked at the packet level by `MixinServerGamePacketListenerImpl` — **don't** handle `ItemTossEvent`: the game itself fires it for drops (closing menus on disconnect, `/give`). `release(player)` removes the anchor and resyncs effects after authentication. Sends the auth reminder every ~5 seconds (100 ticks). Kicks if `loginTimeout` elapsed.
 
 ### 4.5 `mixin/`
 - **`MixinServerLoginPacketListenerImpl`** — async pre-load of `UserData` during the login handshake so neither the handshake nor `PlayerLoggedInEvent` blocks on SQLite. Phase 2 only *peeks* the cache. For premium accounts it does what vanilla does with `online-mode=true` (sets `gameProfile` to a name-only profile, state `KEY`, sends `ClientboundHelloPacket`); vanilla `handleKey` then verifies the session with Mojang. Exceptions from re-running vanilla `handleHello` inside the future disconnect the client instead of being swallowed.
 - **`MixinLivingEntityEffects`** — cancels `tickEffects` for restricted players so effect durations freeze while in the jail (the client HUD is hidden/resynced by `PlayerRestrictionHandler`).
-- **`MixinPlayerListRespawn`** + **`MixinServerPlayerRespawn`** — in 1.20.1 the respawn point lookup lives in `PlayerList.respawn`: for restricted players its `BlockPos` is replaced by `null` (no lookup, no anchor charge, no "no bed" message → world spawn), and `ServerPlayer.restoreFrom` copies the respawn point to the new player (vanilla 1.20.1 only sets it when it was used), so the account keeps its bed/anchor. After `/login`, `LoginCommand` runs the same lookup as `PlayerList.respawn` (`Player.findRespawnPositionAndUseSpawnBlock`, now unrestricted) so anchor charges and invalid spawn points follow vanilla rules.
+- **`MixinPlayerListRespawn`** + **`MixinServerPlayerRespawn`** — in 1.20.1 the respawn point lookup lives in `PlayerList.respawn`: for restricted players its `BlockPos` is replaced by `null` (no lookup, no anchor charge, no "no bed" message → world spawn), and `ServerPlayer.restoreFrom` copies the respawn point to the new player (vanilla 1.20.1 only sets it when it was used), so the account keeps its bed/anchor. After `/login`, `LoginCommand` runs the same lookup as `PlayerList.respawn` (`Player.findRespawnPositionAndUseSpawnBlock`, now unrestricted) so anchor charges and invalid spawn points follow vanilla rules; without a usable respawn point it places the player at world spawn with vanilla's `fudgeSpawnLocation` (`ServerPlayerAccessor`).
 - **`MixinServerGamePacketListenerImpl`** — cancels drop actions, container clicks and creative-slot packets for restricted players (injected *after* `PacketUtils.ensureRunningOnSameThread`, i.e. on the server thread) and resyncs the client inventory.
 - **`MixinRconConsoleSource`** — vanilla reads the RCON response as soon as the command returns, before async admin commands finish. Before `getCommandResponse()` the RCON thread (never the server thread) waits, up to 30 s, for the operations registered by `AuthTasks.finish`; `prepareForCommand()` forgets operations of previous commands. Admin commands must go through `AuthTasks.finish(CommandSourceStack, ...)` for RCON to see their output.
 - **`PlayerListAccessor`** — invoker for the protected `PlayerList.save()` used by `MigrationManager` to flush dirty player files before renaming on premium conversion.
+- **`ServerPlayerAccessor`** — invoker for the private `ServerPlayer.fudgeSpawnLocation(ServerLevel)` (1.21.1's `adjustSpawnLocation`), used by `LoginCommand` to place a player safely at world spawn.
 
 ### 4.6 `data/`
 - **`DatabaseManager`** — single-threaded `ExecutorService` wrapping SQLite; **every public method is async** and the sync helpers are private, so check-then-write inside one task is atomic (`registerUserAsync` re-checks existence and `maxAccountsPerIP` next to the INSERT). `close()` waits for queued writes. The schema version lives in `PRAGMA user_version` (`SCHEMA_VERSION`; 0 = 1.2.0 or older): when an existing database is older, `initDatabase` first saves a consistent copy with `VACUUM INTO` as `serverconfig/directauth-backup-<timestamp>.db`, so server owners never need a manual backup before upgrading. Table:
@@ -170,7 +171,7 @@ Both `en` and `es` files are written on startup; the active one is selected by `
 
 ## 6. Build & Dev Workflow
 
-All commands from repo root. Java 21 must be on `PATH` or via a Gradle toolchain provider.
+All commands from repo root. Java 17 (or newer to run Gradle; the build uses a Java 17 toolchain, downloaded by the foojay resolver if missing).
 
 ```powershell
 .\gradlew build                 # compile + reobfuscated jar with jar-in-jar sqlite (build/libs/directauth-<version>.jar)
@@ -181,7 +182,7 @@ All commands from repo root. Java 21 must be on `PATH` or via a Gradle toolchain
 .\gradlew --refresh-dependencies
 ```
 
-- Mod metadata is **generated**: edit `src/main/templates/META-INF/mods.toml`. The `generateModMetadata` task expands `${mod_id}`, `${mod_version}`, `${forge_version_range}`, etc. (it is a Groovy template: a literal `${` anywhere in the file, comments included, breaks it). from `gradle.properties` and runs on IDE sync.
+- Mod metadata is **generated**: edit `src/main/templates/META-INF/mods.toml`. The `generateModMetadata` task expands `${mod_id}`, `${mod_version}`, `${forge_version_range}`, etc. (it is a Groovy template: a literal `${` anywhere in the file, comments included, breaks it). Values come from `gradle.properties`; the task runs on IDE sync.
 - No unit tests, no Checkstyle/Spotless, no pre-commit hooks. The only CI is `.github/workflows/build.yml` running `./gradlew build` on Ubuntu (Temurin 17).
 - End-to-end smoke tests live in `tools/smoke-test/` (Linux, Node ≥ 22.5): `cd tools/smoke-test && npm ci && ./run-all.sh` builds the mod, installs a production Forge 1.20.1-47.4.0 server in `runs/smoke-test/` the first time (needs `eula=true` there), runs it with the reobfuscated jar in `mods/` and drives it with Mineflayer bots, RCON and SQLite checks (~4 min, exit code ≠ 0 on failure). Run it after changing the auth flow, restrictions, migration or admin commands, and add a test for new behavior. Not part of CI.
 - Working dir for runs is `run/`. Logs and the dev world live there.
