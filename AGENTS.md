@@ -60,7 +60,8 @@ DirectAuth/
 │   │   └── templates/META-INF/neoforge.mods.toml  # source for mods.toml expansion
 │   └── generated/resources/  # output of `runData`
 ├── Documentation/            # GIT-IGNORED — upstream NeoForged docs, not part of this mod
-├── run/  runs/  run-data/    # gitignored dev runtime dirs
+├── tools/smoke-test/         # end-to-end tests: real dev server + Mineflayer bots (see its README)
+├── run/  runs/  run-data/    # gitignored dev runtime dirs (the smoke test uses runs/smoke-test/)
 ├── build/  .gradle/  repo/   # gitignored gradle output
 ├── .github/workflows/build.yml  # CI: gradlew build on push/PR (Ubuntu, Temurin 21)
 ├── AGENTS.md                 # ← you are here
@@ -181,7 +182,8 @@ All commands from repo root. Java 21 must be on `PATH` or via a Gradle toolchain
 ```
 
 - Mod metadata is **generated**: edit `src/main/templates/META-INF/neoforge.mods.toml`, not `src/main/resources/META-INF/neoforge.mods.toml`. The `generateModMetadata` task expands `${mod_id}`, `${mod_version}`, `${neo_version}`, etc. from `gradle.properties` and runs on IDE sync.
-- No tests, no Checkstyle/Spotless, no pre-commit hooks. The only CI is `.github/workflows/build.yml` running `./gradlew build` on Ubuntu.
+- No unit tests, no Checkstyle/Spotless, no pre-commit hooks. The only CI is `.github/workflows/build.yml` running `./gradlew build` on Ubuntu.
+- End-to-end smoke tests live in `tools/smoke-test/` (Linux, Node ≥ 22.5): `cd tools/smoke-test && npm ci && ./run-all.sh` builds the mod, runs the dev server in `runs/smoke-test/` (needs `eula=true` there) and drives it with Mineflayer bots, RCON and SQLite checks (~4 min, exit code ≠ 0 on failure). Run it after changing the auth flow, restrictions, migration or admin commands, and add a test for new behavior. Not part of CI.
 - Working dir for runs is `run/`. Logs and the dev world live there.
 
 ---
@@ -221,6 +223,6 @@ When changing registration / login flow, preserve all of: `registrationDelay`, `
 - **Adding a config field** → add field + default in `ModConfig`, the loader rewrites the JSON automatically on next start.
 - **Adding a message** → add field in `LangConfig` with both English and Spanish defaults; reference via `getConfig().getLang().<field>`.
 - **Adding a persistent column** → migrate the SQLite schema in `DatabaseManager#init` (ALTER TABLE with a try/catch on `SQLITE_ERROR` is the existing pattern); add the field to `UserData`.
-- **Adding a restriction** → add a `@SubscribeEvent` method in `PlayerRestrictionHandler` and gate it on `PlayerRestrictionHandler#isRestricted` (which already excludes `FakePlayer`s).
+- **Adding a restriction** → add a `@SubscribeEvent` method in `PlayerRestrictionHandler` and gate it on `PlayerRestrictionHandler#isRestricted` (which already excludes `FakePlayer`s). Add a check to the jail test in `tools/smoke-test/tests.js`, with a positive control after `/login` so the test cannot pass by accident.
 
 Keep this file in sync with what's actually in the code. If you make an architectural change that contradicts a section here, update the section in the same PR.

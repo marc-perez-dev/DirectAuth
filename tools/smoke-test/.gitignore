@@ -1,0 +1,4 @@
+node_modules/
+console
+*.out
+restart-state.json

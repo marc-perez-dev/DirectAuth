@@ -1,0 +1,15 @@
+{
+  "name": "directauth-smoke-test",
+  "private": true,
+  "description": "End-to-end smoke tests for DirectAuth against a real dev server, driven by Mineflayer bots",
+  "scripts": {
+    "test": "./run-all.sh"
+  },
+  "engines": {
+    "node": ">=22.5"
+  },
+  "dependencies": {
+    "mineflayer": "4.39.0",
+    "rcon-client": "4.2.5"
+  }
+}
