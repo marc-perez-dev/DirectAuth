@@ -175,7 +175,7 @@ Both `en` and `es` files are written on startup; the active one is selected by `
 All commands from repo root. Java 17 (or newer to run Gradle; the build uses a Java 17 toolchain, downloaded by the foojay resolver if missing).
 
 ```powershell
-.\gradlew build                 # compile + reobfuscated jar with jar-in-jar sqlite (build/libs/directauth-<version>.jar)
+.\gradlew build                 # compile + reobfuscated jar with jar-in-jar sqlite (build/libs/directauth-forge-1.20.1-<version>.jar)
 .\gradlew runClient             # dev client (run/ dir, DEBUG logs, REGISTRIES marker)
 .\gradlew runServer             # dev server
 .\gradlew runData               # data generation → src/generated/resources/
