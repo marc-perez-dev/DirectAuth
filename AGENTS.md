@@ -173,7 +173,7 @@ Both `en` and `es` files are written on startup; the active one is selected by `
 All commands from repo root. Java 21 must be on `PATH` or via a Gradle toolchain provider.
 
 ```powershell
-.\gradlew build                 # compile + jar (output in build/libs/directauth.jar)
+.\gradlew build                 # compile + jar (output in build/libs/directauth-neoforge-1.21.1-<version>.jar)
 .\gradlew runClient             # dev client (run/ dir, DEBUG logs, REGISTRIES marker)
 .\gradlew runServer             # dev server
 .\gradlew runData               # data generation → src/generated/resources/
