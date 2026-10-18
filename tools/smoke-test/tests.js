@@ -324,6 +324,31 @@ const rconTest = async (cmd) => /Test passed/.test(await T.rcon(cmd))
     T.assert(await rconTest('execute in minecraft:the_nether if block 10 70 10 minecraft:respawn_anchor[charges=1]'), 'anchor charge not consumed by /login respawn')
   })
 
+  await test('/login without a respawn point: world spawn, out of blocks built over it', async () => {
+    const NOBED = process.env.NOBED || 'NoBed'
+    const b = await register(NOBED, '127.0.0.14', PW, { options: { respawn: false } })
+    await T.rcon(`kill ${NOBED}`)
+    await T.sleep(800)
+    T.assert(b.health === 0, `bot not dead: ${b.health}`)
+    await T.quit(b)
+    // Bloques encima del spawn del mundo: teletransportar a sus coordenadas exactas lo dejaría dentro
+    await T.rcon('fill -3 -60 -3 3 -57 3 minecraft:stone')
+    try {
+      const d = await joinOk(NOBED, '127.0.0.15', { options: { respawn: false } })
+      T.assert(d.joinedDead, 'did not join dead')
+      d.respawn()
+      await T.sleep(2000)
+      T.send(d, `/login ${PW}`)
+      await T.expect(d, L.msgAuthenticated)
+      await T.sleep(1500)
+      T.assert((await T.dimOf(NOBED)) === 'minecraft:overworld', `after login in ${await T.dimOf(NOBED)}`)
+      T.assert(await rconTest(`execute at ${NOBED} if block ~ ~ ~ minecraft:air`) && await rconTest(`execute at ${NOBED} if block ~ ~1 ~ minecraft:air`),
+        `placed inside blocks at ${await T.posOf(NOBED)}`)
+    } finally {
+      await T.rcon('fill -3 -60 -3 3 -57 3 minecraft:air')
+    }
+  })
+
   // ========== Bloqueo por intentos ==========
   await test('lockout: survives reconnect and case variants, other IP unaffected, resetpass clears it', async () => {
     await T.setConfig({ loginCooldownMs: 200 })
