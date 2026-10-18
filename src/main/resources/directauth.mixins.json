@@ -11,6 +11,7 @@
     "MixinPlayerListRespawn",
     "MixinServerGamePacketListenerImpl",
     "MixinRconConsoleSource",
+    "MixinItemPhysicPackets",
     "PlayerListAccessor",
     "ServerPlayerAccessor"
   ],
