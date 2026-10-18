@@ -9,6 +9,7 @@
     "MixinServerPlayerRespawn",
     "MixinServerGamePacketListenerImpl",
     "MixinRconConsoleSource",
+    "MixinItemPhysicPackets",
     "PlayerListAccessor"
   ],
   "injectors": {
