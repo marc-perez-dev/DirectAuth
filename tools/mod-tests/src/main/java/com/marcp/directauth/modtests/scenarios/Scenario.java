@@ -19,9 +19,19 @@ public interface Scenario {
 
     /** Primera entrada de una cuenta nueva: espera el aviso de DirectAuth y se registra. */
     static void registerNew(ClientDriver d) throws Exception {
+        joinNew(d);
+        register(d);
+    }
+
+    /** Primera entrada de una cuenta nueva, sin registrarse todavía. */
+    static void joinNew(ClientDriver d) throws Exception {
         d.connect();
         d.require("DirectAuth asks to register", d.waitChat(WELCOME, 20_000) != null, "chat: " + d.chatSinceMark());
-        d.sleep(1200); // registrationDelay
+    }
+
+    /** /register, respetando registrationDelay (1 s desde que el jugador entró). */
+    static void register(ClientDriver d) throws Exception {
+        d.sleep(1200);
         d.command("register " + PASSWORD);
         d.require("registered", d.waitChat(REGISTERED, 20_000) != null, "chat: " + d.chatSinceMark());
     }
@@ -31,17 +41,12 @@ public interface Scenario {
      * no debe aparecer mientras el jugador está en la jaula, y sí después de /register.
      */
     static void registerNewChecking(ClientDriver d, String what, String screenPrefix) throws Exception {
-        d.connect();
-        d.require("DirectAuth asks to register", d.waitChat(WELCOME, 20_000) != null, "chat: " + d.chatSinceMark());
+        joinNew(d);
         // Las mods abren su pantalla al entrar o unos segundos después (Dragon Survival: 5 s)
         d.sleep(7000);
         d.check(what + " hidden while jailed (new player)", !d.screenName().startsWith(screenPrefix), d.screenName());
-        d.command("register " + PASSWORD);
-        d.require("registered", d.waitChat(REGISTERED, 20_000) != null, "chat: " + d.chatSinceMark());
-        d.check(what + " opens after /register", d.waitFor(() -> {
-            var screen = d.mc().screen;
-            return screen != null && screen.getClass().getName().startsWith(screenPrefix);
-        }, 15_000), d.screenName());
+        register(d);
+        d.check(what + " opens after /register", d.waitFor(() -> screenFrom(d, screenPrefix), 15_000), d.screenName());
     }
 
     /** Entrada de una cuenta existente, sin autenticarse todavía. */
@@ -56,10 +61,26 @@ public interface Scenario {
         d.require("logged out", d.waitFor(() -> d.mc().level == null, 20_000), "chat: " + d.chatSinceMark());
     }
 
-    /** Valor de una comprobación {@code /mt <check> <jugador>} del servidor de pruebas. */
+    /**
+     * Valor de una comprobación {@code /mt <check> <jugador>} del servidor de pruebas. Una respuesta
+     * que no es la esperada (comando desconocido, jugador no conectado) es un error, no un valor:
+     * si no, una comprobación negativa pasaría con el texto del error.
+     */
     static String mt(ClientDriver d, String check) throws Exception {
-        String reply = d.rcon("mt " + check + " " + d.mc().getUser().getName()).trim();
-        return reply.substring(reply.lastIndexOf(": ") + 2);
+        String player = d.mc().getUser().getName();
+        String reply = d.rcon("mt " + check + " " + player).trim();
+        String prefix = "mt " + check.split(" ")[0] + " " + player + ": ";
+        if (!reply.startsWith(prefix)) throw new IllegalStateException("unexpected reply to /mt " + check + ": " + reply);
+        return reply.substring(prefix.length());
+    }
+
+    /** Estadística personalizada del jugador ({@code /mt stat}). */
+    static int stat(ClientDriver d, String stat) throws Exception {
+        String player = d.mc().getUser().getName();
+        String reply = d.rcon("mt stat " + player + " " + stat).trim();
+        String prefix = "mt stat " + player + ": ";
+        if (!reply.startsWith(prefix)) throw new IllegalStateException("unexpected reply to /mt stat " + stat + ": " + reply);
+        return Integer.parseInt(reply.substring(prefix.length()));
     }
 
     /** Espera a que {@code /mt <check>} valga {@code expected}; devuelve si lo ha hecho. */

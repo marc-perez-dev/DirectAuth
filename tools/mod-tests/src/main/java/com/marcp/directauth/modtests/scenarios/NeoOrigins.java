@@ -35,7 +35,7 @@ public class NeoOrigins implements Scenario {
         Scenario.joinJailed(d);
         Scenario.login(d);
         d.check("still no origin after the impostor left", origin(d, player).contains("has no origin"), origin(d, player));
-        d.check("origin picker opens after /login", d.waitFor(() -> screenFrom(d, SCREENS), 15_000), d.screenName());
+        d.check("origin picker opens after /login", d.waitFor(() -> Scenario.screenFrom(d, SCREENS), 15_000), d.screenName());
         d.sendToServer(CHOOSE_MERLING);
         d.sleep(2000);
         d.check("control: origin chosen after /login", origin(d, player).contains("neoorigins:merling"), origin(d, player));
@@ -50,7 +50,4 @@ public class NeoOrigins implements Scenario {
         return d.rcon("origin get " + player + " neoorigins:origin");
     }
 
-    private static boolean screenFrom(ClientDriver d, String prefix) {
-        return d.mc().screen != null && d.mc().screen.getClass().getName().startsWith(prefix);
-    }
 }

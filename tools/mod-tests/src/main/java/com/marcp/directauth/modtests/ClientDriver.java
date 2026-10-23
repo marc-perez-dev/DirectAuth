@@ -193,7 +193,7 @@ public final class ClientDriver {
             if (mc.level != null) mc.level.disconnect();
             mc.disconnect(new TitleScreen());
         });
-        waitFor(() -> mc.level == null, 30_000);
+        require("disconnected", waitFor(() -> mc.level == null, 30_000), "screen: " + screenName());
     }
 
     public boolean connected() throws Exception {

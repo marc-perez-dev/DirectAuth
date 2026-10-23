@@ -25,9 +25,11 @@ const log = (...a) => console.log(...a)
 
 // ---------- Mods ----------
 
+const verified = new Set()
 async function download (mod) {
   const file = path.join(CACHE, mod.file)
-  if (fs.existsSync(file) && sha512(file) === mod.sha512) return file
+  if (verified.has(file)) return file
+  if (fs.existsSync(file) && sha512(file) === mod.sha512) { verified.add(file); return file }
   fs.mkdirSync(CACHE, { recursive: true })
   log(`  downloading ${mod.file}`)
   const res = await fetch(mod.url)
@@ -35,9 +37,20 @@ async function download (mod) {
   fs.writeFileSync(file + '.part', Buffer.from(await res.arrayBuffer()))
   if (sha512(file + '.part') !== mod.sha512) throw new Error(`${mod.file}: checksum mismatch`)
   fs.renameSync(file + '.part', file)
+  verified.add(file)
   return file
 }
-const sha512 = (file) => crypto.createHash('sha512').update(fs.readFileSync(file)).digest('hex')
+function sha512 (file) {
+  const hash = crypto.createHash('sha512')
+  const fd = fs.openSync(file, 'r')
+  const buf = Buffer.alloc(1 << 20)
+  try {
+    for (let n; (n = fs.readSync(fd, buf, 0, buf.length, null)) > 0;) hash.update(buf.subarray(0, n))
+  } finally {
+    fs.closeSync(fd)
+  }
+  return hash.digest('hex')
+}
 
 /**
  * Todas las mods del manifiesto: también las usa la compilación del arnés (solo para compilar).
@@ -203,21 +216,49 @@ function patchJar (jar, patch) {
 
 // ---------- Procesos ----------
 
+// Servidor y cliente corren en su propio grupo de procesos: si run.js termina antes (Ctrl-C, error),
+// se matan para que no se queden ocupando los puertos y la memoria
+const running = new Set()
+function killAll () {
+  for (const child of running) {
+    try { process.kill(-child.pid, 'SIGKILL') } catch {}
+  }
+}
+process.on('exit', killAll)
+for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP']) process.on(signal, () => process.exit(130))
+
 function startProcess (name, cmd, extraJvm, extraArgs, cwd, logFile, wrapper = []) {
   const out = fs.openSync(logFile, 'w')
   const argv = [...extraJvm, ...cmd.jvm, ...cmd.main, ...extraArgs]
   const [bin, ...rest] = wrapper.length ? [...wrapper, cmd.java, ...argv] : [cmd.java, ...argv]
   const child = spawn(bin, rest, { cwd, stdio: ['ignore', out, out], detached: true })
-  child.exited = new Promise((resolve) => child.on('exit', (code, signal) => resolve(code ?? signal)))
+  child.exited = new Promise((resolve) => child.on('exit', (code, signal) => { running.delete(child); resolve(code ?? signal) }))
   child.label = name
+  running.add(child)
   return child
 }
 
+/** Espera una línea en el log, leyendo solo lo nuevo (el patrón debe caber en una línea). */
 async function waitForLog (file, pattern, timeoutMs, child) {
   const end = Date.now() + timeoutMs
+  let offset = 0
+  let tail = ''
   while (Date.now() < end) {
-    if (fs.existsSync(file) && pattern.test(fs.readFileSync(file, 'utf8'))) return true
-    if (child.exitCode !== null) return false
+    if (fs.existsSync(file)) {
+      const size = fs.statSync(file).size
+      if (size > offset) {
+        const fd = fs.openSync(file, 'r')
+        const buf = Buffer.alloc(size - offset)
+        fs.readSync(fd, buf, 0, buf.length, offset)
+        fs.closeSync(fd)
+        offset = size
+        const text = tail + buf.toString('utf8')
+        if (pattern.test(text)) return true
+        tail = text.slice(text.lastIndexOf('\n') + 1)
+      }
+    }
+    // Muerto por código de salida o por señal (p. ej. el OOM killer)
+    if (child.exitCode !== null || child.signalCode !== null) return false
     await sleep(500)
   }
   return false

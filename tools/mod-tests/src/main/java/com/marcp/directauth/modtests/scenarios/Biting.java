@@ -18,7 +18,7 @@ final class Biting {
         d.require("cow visible to the client", d.waitFor(() -> cowId(d) >= 0, 10_000), "no cow in the client world");
     }
 
-    /** Id de red de la vaca en el mundo del cliente (-1 si no la ve). */
+    /** Id de red de la vaca en el mundo del cliente (-1 si no la ve). Solo en el hilo del cliente. */
     static int cowId(ClientDriver d) {
         if (d.mc().level == null) return -1;
         for (Entity entity : d.mc().level.entitiesForRendering()) {

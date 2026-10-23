@@ -37,6 +37,7 @@ public class Werewolves implements Scenario {
     }
 
     private static void bite(ClientDriver d) throws Exception {
-        d.sendToServer(new ServerboundBiteEventPackage(Biting.cowId(d)));
+        int cow = d.onClient(() -> Biting.cowId(d));
+        d.sendToServer(new ServerboundBiteEventPackage(cow));
     }
 }

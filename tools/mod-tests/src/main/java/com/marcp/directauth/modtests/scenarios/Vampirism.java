@@ -32,11 +32,11 @@ public class Vampirism implements Scenario {
     }
 
     private static void bite(ClientDriver d) throws Exception {
-        d.sendToServer(new ServerboundStartFeedingPacket(Biting.cowId(d)));
+        int cow = d.onClient(() -> Biting.cowId(d));
+        d.sendToServer(new ServerboundStartFeedingPacket(cow));
     }
 
     private static int bitten(ClientDriver d) throws Exception {
-        String reply = d.rcon("mt stat " + d.mc().getUser().getName() + " " + BITTEN).trim();
-        return Integer.parseInt(reply.substring(reply.lastIndexOf(": ") + 2));
+        return Scenario.stat(d, BITTEN);
     }
 }

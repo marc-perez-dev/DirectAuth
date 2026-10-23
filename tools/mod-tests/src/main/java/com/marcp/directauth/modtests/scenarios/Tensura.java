@@ -34,8 +34,18 @@ public class Tensura implements Scenario {
         d.disconnect();
     }
 
-    /** Como el botón de confirmar de la pantalla: un clic de botón en el menú abierto. */
+    /**
+     * Como el botón de confirmar de la pantalla: un clic de botón en el menú abierto. Un impostor no
+     * necesita ver el menú: los ids de contenedor son correlativos, así que se prueban los primeros
+     * además del que tenga abierto el cliente.
+     */
     private static void clickSubmit(ClientDriver d) throws Exception {
-        d.onClientRun(() -> d.mc().gameMode.handleInventoryButtonClick(d.mc().player.containerMenu.containerId, SUBMIT));
+        d.onClientRun(() -> {
+            int open = d.mc().player.containerMenu.containerId;
+            d.mc().gameMode.handleInventoryButtonClick(open, SUBMIT);
+            for (int id = 1; id <= 10; id++) {
+                if (id != open) d.mc().gameMode.handleInventoryButtonClick(id, SUBMIT);
+            }
+        });
     }
 }

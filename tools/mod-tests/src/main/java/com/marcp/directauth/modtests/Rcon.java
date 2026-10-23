@@ -25,11 +25,21 @@ public final class Rcon implements AutoCloseable {
         if (readPacket().id != id) throw new IOException("RCON login rejected");
     }
 
+    /**
+     * El servidor parte las respuestas de más de 4096 bytes en varios paquetes con el mismo id: tras
+     * el comando se envía otro vacío, y todo lo que llega antes de su respuesta es del comando.
+     */
     public synchronized String command(String command) throws IOException {
         int id = send(COMMAND, command);
-        Packet p = readPacket();
-        if (p.id != id) throw new IOException("RCON reply out of order");
-        return p.body.replaceAll("§.", "");
+        int end = send(COMMAND, "");
+        StringBuilder body = new StringBuilder();
+        for (;;) {
+            Packet p = readPacket();
+            if (p.id == end) break;
+            if (p.id != id) throw new IOException("RCON reply out of order");
+            body.append(p.body);
+        }
+        return body.toString().replaceAll("§.", "");
     }
 
     private int send(int type, String body) throws IOException {

@@ -16,13 +16,15 @@ public class Voicechat implements Scenario {
 
         Scenario.joinJailed(d);
         d.sleep(8000);
-        d.check("no voice chat while jailed", !voiceConnected() && Scenario.mt(d, "voicechat-has-secret").equals("false"),
-            "client connected: " + voiceConnected() + ", server secret: " + Scenario.mt(d, "voicechat-has-secret"));
+        boolean connected = d.onClient(Voicechat::voiceConnected);
+        String secret = Scenario.mt(d, "voicechat-has-secret");
+        d.check("no voice chat while jailed", !connected && secret.equals("false"), "client connected: " + connected + ", server secret: " + secret);
         Scenario.login(d);
         d.check("voice chat connects after /login without reconnecting", d.waitFor(Voicechat::voiceConnected, 20_000), "not connected");
         d.disconnect();
     }
 
+    /** Solo en el hilo del cliente (waitFor y onClient ya lo hacen). */
     private static boolean voiceConnected() {
         var client = ClientManager.getClient();
         return client != null && client.getConnection() != null && client.getConnection().isInitialized();
