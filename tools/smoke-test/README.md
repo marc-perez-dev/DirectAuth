@@ -49,8 +49,8 @@ accounts, some tests take fresh names from the environment: `JAIL`, `JAIL_IP`, `
 
 ## Other mods (test mod `directauth_test`)
 
-The dev server also loads a small test mod, `src/testmod/` in this repo (only in the `server` run,
-never in the DirectAuth jar). It stands in for other mods so the bots can check how DirectAuth
+The smoke-test server (the `smokeServer` run: `runServer` plus this mod) also loads a small test
+mod, `src/testmod/` in this repo, never in the DirectAuth jar. It stands in for other mods so the bots can check how DirectAuth
 treats them:
 
 - Optional payloads in both directions (`directauth_test:action`, `hello`, `screen`, `data`). A

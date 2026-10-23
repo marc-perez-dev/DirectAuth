@@ -1,5 +1,5 @@
-# Mod de pruebas para el smoke test (tools/smoke-test). Solo se carga en el run "server" de
-# desarrollo; nunca va en el jar de DirectAuth.
+# Mod de pruebas para el smoke test (tools/smoke-test). Solo se carga en el run "smokeServer";
+# nunca va en el jar de DirectAuth.
 modLoader="javafml"
 loaderVersion="[4,)"
 license="MIT"

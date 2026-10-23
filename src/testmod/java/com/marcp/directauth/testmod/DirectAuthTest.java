@@ -33,9 +33,10 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 /**
- * Simula, en el servidor del smoke test, lo que hacen otras mods con un jugador sin autenticar:
- * paquetes propios en las dos direcciones, menús abiertos por el servidor y teletransportes en la
- * primera entrada. Lo que recibe el servidor se consulta por RCON con {@code /datest log <jugador>}.
+ * Simula, en el servidor del smoke test (run "smokeServer"), lo que hacen otras mods con un
+ * jugador sin autenticar: paquetes propios en las dos direcciones, menús abiertos por el servidor
+ * y teletransportes en la primera entrada. Lo que recibe el servidor se consulta por RCON con
+ * {@code /datest log <jugador>}.
  */
 @Mod(DirectAuthTest.MODID)
 public class DirectAuthTest {
@@ -97,15 +98,26 @@ public class DirectAuthTest {
     private static void registerPayloads(RegisterPayloadHandlersEvent event) {
         // Opcionales: así Mineflayer (cliente vanilla) puede conectarse y usarlos
         var registrar = event.registrar("1").optional();
+        // Los manejadores ya corren en el hilo del servidor (HandlerThread.MAIN por defecto)
         registrar.playToServer(ActionPayload.TYPE, ActionPayload.CODEC,
-            (payload, ctx) -> ctx.enqueueWork(() -> log(ctx.player(), "action:" + payload.value())));
+            (payload, ctx) -> log(ctx.player(), "action:" + payload.value()));
         registrar.playToServer(HelloPayload.TYPE, HelloPayload.CODEC,
-            (payload, ctx) -> ctx.enqueueWork(() -> log(ctx.player(), "hello:" + payload.value())));
+            (payload, ctx) -> log(ctx.player(), "hello:" + payload.value()));
         registrar.playToClient(ScreenPayload.TYPE, ScreenPayload.CODEC, DirectAuthTest::ignore);
         registrar.playToClient(DataPayload.TYPE, DataPayload.CODEC, DirectAuthTest::ignore);
     }
 
     private static void ignore(CustomPacketPayload payload, IPayloadContext ctx) {
+    }
+
+    /**
+     * Envía un payload solo si el cliente declaró el canal: NeoForge lanza una excepción si no, y
+     * dentro de PlayerLoggedInEvent cortaría el resto de manejadores (DirectAuth incluido).
+     */
+    private static boolean sendIfSupported(ServerPlayer player, CustomPacketPayload payload) {
+        if (!player.connection.hasChannel(payload)) return false;
+        PacketDistributor.sendToPlayer(player, payload);
+        return true;
     }
 
     /** Menú de cofre que anota los clics en botones (como el selector de raza de Tensura). */
@@ -133,8 +145,8 @@ public class DirectAuthTest {
             player.teleportTo(TP_X, TP_Y, TP_Z);
         }
         if (name.startsWith("Scr")) {
-            PacketDistributor.sendToPlayer(player, new ScreenPayload("login"));
-            PacketDistributor.sendToPlayer(player, new DataPayload("login"));
+            sendIfSupported(player, new ScreenPayload("login"));
+            sendIfSupported(player, new DataPayload("login"));
         }
         if (name.startsWith("MenuLogin")) {
             openMenu(player, "login");
@@ -170,18 +182,18 @@ public class DirectAuthTest {
                     .then(Commands.argument("value", StringArgumentType.word())
                         .executes(ctx -> {
                             ServerPlayer player = EntityArgument.getPlayer(ctx, "player");
-                            PacketDistributor.sendToPlayer(player, new ScreenPayload(StringArgumentType.getString(ctx, "value")));
-                            reply(ctx.getSource(), "datest screen sent");
-                            return 1;
+                            boolean sent = sendIfSupported(player, new ScreenPayload(StringArgumentType.getString(ctx, "value")));
+                            reply(ctx.getSource(), sent ? "datest screen sent" : "datest screen: channel not declared by the client");
+                            return sent ? 1 : 0;
                         }))))
             .then(Commands.literal("data")
                 .then(Commands.argument("player", EntityArgument.player())
                     .then(Commands.argument("value", StringArgumentType.word())
                         .executes(ctx -> {
                             ServerPlayer player = EntityArgument.getPlayer(ctx, "player");
-                            PacketDistributor.sendToPlayer(player, new DataPayload(StringArgumentType.getString(ctx, "value")));
-                            reply(ctx.getSource(), "datest data sent");
-                            return 1;
+                            boolean sent = sendIfSupported(player, new DataPayload(StringArgumentType.getString(ctx, "value")));
+                            reply(ctx.getSource(), sent ? "datest data sent" : "datest data: channel not declared by the client");
+                            return sent ? 1 : 0;
                         }))))
             .then(Commands.literal("menu")
                 .then(Commands.argument("player", EntityArgument.player())

@@ -253,7 +253,9 @@ const rconTest = async (cmd) => /Test passed/.test(await T.rcon(cmd))
     // La Y del cliente puede quedar una milésima por debajo de -60: sin margen, floor() mira un bloque más abajo
     const q = [b.entity.position.x, b.entity.position.y + 0.001, b.entity.position.z].map(Math.floor)
     const under = b.blockAt(new Vec3(q[0] + 1, q[1] - 1, q[2]))
-    T.assert(under && under.name === 'grass_block', `control: unexpected block ${under && under.name} at ${q[0] + 1} ${q[1] - 1} ${q[2]} (bot at ${b.entity.position}, server ${await T.posOf(JAIL)})`)
+    if (!(under && under.name === 'grass_block')) {
+      throw new Error(`control: unexpected block ${under && under.name} at ${q[0] + 1} ${q[1] - 1} ${q[2]} (bot at ${b.entity.position}, server ${await T.posOf(JAIL)})`)
+    }
     const t0 = Date.now()
     let dug = false
     await Promise.race([b.dig(under).then(() => { dug = true }).catch((e) => console.log('      control dig error:', e.message)), T.sleep(10000)])
@@ -891,98 +893,122 @@ const rconTest = async (cmd) => /Test passed/.test(await T.rcon(cmd))
       logInInventory: await rconTest(`execute if data entity ${NAME} Inventory[{id:"minecraft:oak_log"}]`)
     })
 
-    b = await joinOk(NAME, IP)
-    b._client.on('nbt_query_response', (p) => nbtAnswers.push(p))
-    await T.expect(b, L.msgLoginRequest)
-    await T.sleep(800)
-    await attempt(b, 'jailed')
-    let s = await state()
-    const leaks = []
-    if (s.commandBlock.includes('jailed')) leaks.push('command block rewritten')
-    if (s.minecart.includes('jailed')) leaks.push('command block minecart rewritten')
-    if (s.structure.includes('jailed')) leaks.push('structure block rewritten')
-    if (s.jigsaw.includes('jailed')) leaks.push('jigsaw block rewritten')
-    if (!/peaceful/i.test(s.difficulty)) leaks.push(`difficulty changed (${s.difficulty.trim()})`)
-    if (nbtAnswers.length) leaks.push(`answered ${nbtAnswers.length} NBT queries`)
-    if (s.book.includes('jailed')) leaks.push('book edited')
-    if (!s.logInInventory) leaks.push('recipe placed in the crafting grid')
+    try {
+      b = await joinOk(NAME, IP)
+      b._client.on('nbt_query_response', (p) => nbtAnswers.push(p))
+      await T.expect(b, L.msgLoginRequest)
+      await T.sleep(800)
+      await attempt(b, 'jailed')
+      let s = await state()
+      const leaks = []
+      if (s.commandBlock.includes('jailed')) leaks.push('command block rewritten')
+      if (s.minecart.includes('jailed')) leaks.push('command block minecart rewritten')
+      if (s.structure.includes('jailed')) leaks.push('structure block rewritten')
+      if (s.jigsaw.includes('jailed')) leaks.push('jigsaw block rewritten')
+      if (!/peaceful/i.test(s.difficulty)) leaks.push(`difficulty changed (${s.difficulty.trim()})`)
+      if (nbtAnswers.length) leaks.push(`answered ${nbtAnswers.length} NBT queries`)
+      if (s.book.includes('jailed')) leaks.push('book edited')
+      if (!s.logInInventory) leaks.push('recipe placed in the crafting grid')
 
-    // Controles positivos: tras /login los mismos paquetes sí funcionan (se comprueban aunque
-    // haya fugas, para que el informe diga también si la prueba de cada paquete es válida)
-    T.send(b, `/login ${PW}`)
-    await T.expect(b, L.msgAuthenticated)
-    await T.sleep(500)
-    // ¿Quedó bloqueada la dificultad desde la jaula? Un op autenticado no podría cambiarla
-    b._client.write('set_difficulty', { newDifficulty: 'easy' })
-    await T.sleep(500)
-    if (!/easy/i.test(await T.rcon('difficulty'))) {
-      leaks.push('difficulty locked')
-      b._client.write('lock_difficulty', { locked: false })
+      // Controles positivos: tras /login los mismos paquetes sí funcionan (se comprueban aunque
+      // haya fugas, para que el informe diga también si la prueba de cada paquete es válida)
+      T.send(b, `/login ${PW}`)
+      await T.expect(b, L.msgAuthenticated)
+      await T.sleep(500)
+      // ¿Quedó bloqueada la dificultad desde la jaula? Un op autenticado no podría cambiarla
+      b._client.write('set_difficulty', { newDifficulty: 'easy' })
+      await T.sleep(500)
+      if (!/easy/i.test(await T.rcon('difficulty'))) {
+        leaks.push('difficulty locked')
+        b._client.write('lock_difficulty', { locked: false })
+        await T.sleep(300)
+      }
+      // Devolver el tronco de la rejilla al inventario (cerrar el inventario la vacía), para que el
+      // control de la receta no pase solo porque el intento desde la jaula ya lo movió
+      b._client.write('close_window', { windowId: 0 })
       await T.sleep(300)
+      const missing = []
+      if (!(await rconTest(`execute if data entity ${NAME} Inventory[{id:"minecraft:oak_log"}]`))) missing.push('recipe (log not back in the inventory)')
+      const answersBefore = nbtAnswers.length
+      await attempt(b, 'control')
+      s = await state()
+      if (!s.commandBlock.includes('control')) missing.push('command block')
+      if (!s.minecart.includes('control')) missing.push('minecart')
+      if (!s.structure.includes('control')) missing.push('structure block')
+      if (!s.jigsaw.includes('control')) missing.push('jigsaw')
+      if (!/hard/i.test(s.difficulty)) missing.push('difficulty')
+      if (nbtAnswers.length < answersBefore + 2) missing.push('NBT queries')
+      if (!s.book.includes('control')) missing.push('book')
+      if (s.logInInventory) missing.push('recipe')
+      b._client.write('set_difficulty', { newDifficulty: 'normal' })
+      await T.sleep(500)
+      if (!/hard/i.test(await T.rcon('difficulty'))) missing.push('difficulty lock')
+      T.assert(!leaks.length && !missing.length,
+        (leaks.length ? 'jailed op impostor: ' + leaks.join(', ') + '. ' : '') +
+        (missing.length ? 'control: did not work after /login: ' + missing.join(', ') : ''))
+    } finally {
+      // Deshacer aunque falle a medias: bloqueo de dificultad (solo un op autenticado puede
+      // quitarlo), dificultad, op, modo de juego y bloques
+      if (b.connected) {
+        if (!b.msgs.some((m) => T.re(L.msgAuthenticated).test(m))) {
+          T.send(b, `/login ${PW}`)
+          await T.expect(b, L.msgAuthenticated).catch(() => {})
+        }
+        b._client.write('lock_difficulty', { locked: false })
+        await T.sleep(300)
+      }
+      await T.rcon('difficulty peaceful')
+      await T.rcon(`deop ${NAME}`)
+      await T.rcon(`gamemode survival ${NAME}`).catch(() => {})
+      await T.rcon('kill @e[type=command_block_minecart]')
+      for (const z of [3, 5, 7]) await T.rcon(`setblock 3 -60 ${z} minecraft:air`)
     }
-    await attempt(b, 'control')
-    s = await state()
-    const missing = []
-    if (!s.commandBlock.includes('control')) missing.push('command block')
-    if (!s.minecart.includes('control')) missing.push('minecart')
-    if (!s.structure.includes('control')) missing.push('structure block')
-    if (!s.jigsaw.includes('control')) missing.push('jigsaw')
-    if (!/hard/i.test(s.difficulty)) missing.push('difficulty')
-    if (nbtAnswers.length < 2) missing.push('NBT queries')
-    if (!s.book.includes('control')) missing.push('book')
-    if (s.logInInventory) missing.push('recipe')
-    b._client.write('set_difficulty', { newDifficulty: 'normal' })
-    await T.sleep(500)
-    if (!/hard/i.test(await T.rcon('difficulty'))) missing.push('difficulty lock')
-    // Deshacer: dificultad, bloqueo, op y bloques
-    b._client.write('lock_difficulty', { locked: false })
-    await T.rcon('difficulty peaceful')
-    await T.rcon(`deop ${NAME}`)
-    await T.rcon(`gamemode survival ${NAME}`)
-    await T.rcon('kill @e[type=command_block_minecart]')
-    for (const z of [3, 5, 7]) await T.rcon(`setblock 3 -60 ${z} minecraft:air`)
-    T.assert(!leaks.length && !missing.length,
-      (leaks.length ? 'jailed op impostor: ' + leaks.join(', ') + '. ' : '') +
-      (missing.length ? 'control: did not work after /login: ' + missing.join(', ') : ''))
   })
 
   await test('screens from other mods: listed payloads wait for /login (only the last one), other payloads arrive at once', async () => {
+    const cfgPath = path.join(T.CFG_DIR, 'DirectAuth-config.json')
+    const original = fs.readFileSync(cfgPath, 'utf8')
     await T.setConfig({ deferredScreenPayloads: [SCREEN] })
-    const NAME = fresh('ScrMod')
-    const IP = '127.0.0.112'
-    const opts = { channels: [SCREEN, DATA] }
-    // Cuenta nueva: la mod abre su pantalla al entrar, antes de /register
-    let b = await joinOk(NAME, IP, opts)
-    await T.expect(b, L.msgWelcome)
-    await T.sleep(800)
-    T.assert(T.received(b, DATA).includes('login'), `non-screen payload was held: ${JSON.stringify(b.payloads)}`)
-    await T.rcon(`datest screen ${NAME} first`)
-    await T.rcon(`datest screen ${NAME} last`)
-    await T.sleep(500)
-    T.assert(T.received(b, SCREEN).length === 0, `screen payloads reached a jailed player: ${T.received(b, SCREEN)}`)
-    await T.sleep(300)
-    T.send(b, `/register ${PW}`)
-    await T.expect(b, L.msgRegistered)
-    await T.sleep(800)
-    T.assert(JSON.stringify(T.received(b, SCREEN)) === '["last"]', `after /register expected only ["last"], got ${JSON.stringify(T.received(b, SCREEN))}`)
-    await logout(b)
+    try {
+      const NAME = fresh('ScrMod')
+      const IP = '127.0.0.112'
+      const opts = { channels: [SCREEN, DATA] }
+      // Cuenta nueva: la mod abre su pantalla al entrar, antes de /register
+      let b = await joinOk(NAME, IP, opts)
+      await T.expect(b, L.msgWelcome)
+      await T.sleep(800)
+      T.assert(T.received(b, DATA).includes('login'), `non-screen payload was held: ${JSON.stringify(b.payloads)}`)
+      await T.rcon(`datest screen ${NAME} first`)
+      await T.rcon(`datest screen ${NAME} last`)
+      await T.sleep(500)
+      T.assert(T.received(b, SCREEN).length === 0, `screen payloads reached a jailed player: ${T.received(b, SCREEN)}`)
+      await T.sleep(300)
+      T.send(b, `/register ${PW}`)
+      await T.expect(b, L.msgRegistered)
+      await T.sleep(800)
+      T.assert(JSON.stringify(T.received(b, SCREEN)) === '["last"]', `after /register expected only ["last"], got ${JSON.stringify(T.received(b, SCREEN))}`)
+      await logout(b)
 
-    // Cuenta existente: llega tras /login
-    b = await joinOk(NAME, IP, opts)
-    await T.expect(b, L.msgLoginRequest)
-    await T.sleep(800)
-    T.assert(T.received(b, SCREEN).length === 0, `screen payload reached a jailed player: ${T.received(b, SCREEN)}`)
-    T.send(b, `/login ${PW}`)
-    await T.expect(b, L.msgAuthenticated)
-    await T.sleep(800)
-    T.assert(JSON.stringify(T.received(b, SCREEN)) === '["login"]', `after /login expected ["login"], got ${JSON.stringify(T.received(b, SCREEN))}`)
-    await T.quit(b)
+      // Cuenta existente: llega tras /login
+      b = await joinOk(NAME, IP, opts)
+      await T.expect(b, L.msgLoginRequest)
+      await T.sleep(800)
+      T.assert(T.received(b, SCREEN).length === 0, `screen payload reached a jailed player: ${T.received(b, SCREEN)}`)
+      T.send(b, `/login ${PW}`)
+      await T.expect(b, L.msgAuthenticated)
+      await T.sleep(800)
+      T.assert(JSON.stringify(T.received(b, SCREEN)) === '["login"]', `after /login expected ["login"], got ${JSON.stringify(T.received(b, SCREEN))}`)
+      await T.quit(b)
 
-    // Sesión restaurada al entrar: llega sin esperar
-    b = await joinOk(NAME, IP, opts)
-    await T.expect(b, L.msgSessionRestored)
-    await T.sleep(800)
-    T.assert(JSON.stringify(T.received(b, SCREEN)) === '["login"]', `with a restored session expected ["login"], got ${JSON.stringify(T.received(b, SCREEN))}`)
+      // Sesión restaurada al entrar: llega sin esperar
+      b = await joinOk(NAME, IP, opts)
+      await T.expect(b, L.msgSessionRestored)
+      await T.sleep(800)
+      T.assert(JSON.stringify(T.received(b, SCREEN)) === '["login"]', `with a restored session expected ["login"], got ${JSON.stringify(T.received(b, SCREEN))}`)
+    } finally {
+      fs.writeFileSync(cfgPath, original)
+      await T.rcon('directauth reload')
+    }
   })
 
   await test('menus opened by the server wait for /login', async () => {

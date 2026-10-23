@@ -6,9 +6,16 @@ REPO=$(cd "$HERE/../.." && pwd)
 GAME="$REPO/runs/smoke-test"
 # Checkout cuyo mod se arranca (DIRECTAUTH_SRC permite probar otra versión contra el mismo mundo)
 SRC="${DIRECTAUTH_SRC:-$REPO}"
-LAUNCH="$SRC/build/moddev/runServer.sh"
+# Run "smokeServer" (DirectAuth + mod de pruebas); las versiones anteriores solo tienen "server"
+if grep -q smokeServer "$SRC/build.gradle"; then
+  LAUNCH="$SRC/build/moddev/runSmokeServer.sh"
+  BUILD="bash gradlew classes testmodClasses createSmokeServerLaunchScript"
+else
+  LAUNCH="$SRC/build/moddev/runServer.sh"
+  BUILD="bash gradlew classes createServerLaunchScript"
+fi
 
-[ -f "$LAUNCH" ] || { echo "Missing $LAUNCH: run 'bash gradlew classes createServerLaunchScript' in $SRC"; exit 1; }
+[ -f "$LAUNCH" ] || { echo "Missing $LAUNCH: run '$BUILD' in $SRC"; exit 1; }
 mkdir -p "$GAME"
 if ! grep -q '^eula=true' "$GAME/eula.txt" 2>/dev/null; then
   echo "Read the Minecraft EULA (https://aka.ms/MinecraftEULA) and accept it with:"
@@ -21,7 +28,7 @@ cp "$HERE/server.properties" "$GAME/server.properties"
 # propiedad marcadora para encontrar el proceso (pgrep) sin confundirlo con otro runServer/runClient
 cmd=$(sed -e "s|cd '$SRC/run'|cd '$GAME'|" \
           -e "s|exec '\([^']*/bin/java\)'|exec '\1' '-Ddirectauth.smoketest=true'|" \
-          -e "s|serverRunProgramArgs.txt')\$|serverRunProgramArgs.txt' --nogui)|" "$LAUNCH")
+          -e "s|RunProgramArgs.txt')\$|RunProgramArgs.txt' --nogui)|" "$LAUNCH")
 if [[ "$cmd" != *"cd '$GAME'"* || "$cmd" != *"directauth.smoketest"* || "$cmd" != *"--nogui"* ]]; then
   echo "Unexpected format in $LAUNCH; update server.sh"
   exit 1

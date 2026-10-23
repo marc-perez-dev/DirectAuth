@@ -28,8 +28,8 @@ base {
 // Mojang ships Java 21 to end users in 1.21.1, so mods should target Java 21.
 java.toolchain.languageVersion = JavaLanguageVersion.of(21)
 
-// Mod de pruebas del smoke test (tools/smoke-test): solo se carga en el run "server" de desarrollo
-// y no forma parte del jar.
+// Mod de pruebas del smoke test (tools/smoke-test): solo se carga en el run "smokeServer" y no
+// forma parte del jar.
 sourceSets {
     testmod
 }
@@ -72,10 +72,17 @@ neoForge {
 
         server {
             server()
-            // El smoke test arranca este run: incluye el mod de pruebas
-            loadedMods = [mods.directauth, mods.directauth_test]
+            loadedMods = [mods.directauth]
             // programArgument '--nogui'
             systemProperty 'neoforge.enabledGameTestNamespaces', project.mod_id
+        }
+
+        // Servidor del smoke test (tools/smoke-test/server.sh): como "server", más el mod de pruebas.
+        // Aparte para que runServer siga siendo igual que producción.
+        smokeServer {
+            server()
+            loadedMods = [mods.directauth, mods.directauth_test]
+            disableIdeRun()
         }
 
         // This run config launches GameTestServer and runs all registered gametests, then exits.

@@ -58,6 +58,7 @@ DirectAuth/
 │   │   │   ├── directauth.mixins.json
 │   │   │   └── assets/directauth/    # (lang/ here is placeholder — real i18n is JSON in worldserverconfig)
 │   │   └── templates/META-INF/neoforge.mods.toml  # source for mods.toml expansion
+│   ├── testmod/              # dev-only test mod `directauth_test` for the smoke test (run `smokeServer`, never in the jar)
 │   └── generated/resources/  # output of `runData`
 ├── Documentation-NeoForge/   # GIT-IGNORED — upstream NeoForged docs, not part of this mod
 ├── Documentation/            # GIT-IGNORED — upstream Forge docs (forge-1.20.1 branch), not part of this mod
@@ -186,6 +187,7 @@ All commands from repo root. Java 21 must be on `PATH` or via a Gradle toolchain
 - Mod metadata is **generated**: edit `src/main/templates/META-INF/neoforge.mods.toml`, not `src/main/resources/META-INF/neoforge.mods.toml`. The `generateModMetadata` task expands `${mod_id}`, `${mod_version}`, `${neo_version}`, etc. from `gradle.properties` and runs on IDE sync.
 - No unit tests, no Checkstyle/Spotless, no pre-commit hooks. The only CI is `.github/workflows/build.yml` running `./gradlew build` on Ubuntu.
 - End-to-end smoke tests live in `tools/smoke-test/` (Linux, Node ≥ 22.5): `cd tools/smoke-test && npm ci && ./run-all.sh` builds the mod, runs the dev server in `runs/smoke-test/` (needs `eula=true` there) and drives it with Mineflayer bots, RCON and SQLite checks (~4 min, exit code ≠ 0 on failure). Run it after changing the auth flow, restrictions, migration or admin commands, and add a test for new behavior. Not part of CI.
+- The smoke-test server is the `smokeServer` run: `runServer` plus the test mod in `src/testmod/` (source set `testmod`), which stands in for other mods (optional payloads both ways, a server-opened menu, first-join teleports, `/datest` commands). `runServer`, `runClient` and the jar only contain DirectAuth. CI's `gradlew build` does not compile the test mod; `run-all.sh` does (`testmodClasses`).
 - Working dir for runs is `run/`. Logs and the dev world live there.
 
 ---
