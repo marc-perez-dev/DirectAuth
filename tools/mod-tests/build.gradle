@@ -1,0 +1,39 @@
+plugins {
+    id 'java-library'
+    id 'net.neoforged.moddev' version '2.0.121'
+}
+
+version = '1.0.0'
+group = 'com.marcp.directauth.modtests'
+java.toolchain.languageVersion = JavaLanguageVersion.of(21)
+
+neoForge {
+    version = project.neo_version
+
+    mods {
+        directauth_modtests {
+            sourceSet(sourceSets.main)
+        }
+    }
+
+    // run.js cambia el directorio de juego de cada escenario en los scripts de lanzamiento
+    runs {
+        client {
+            client()
+            gameDirectory = file('../../runs/mod-tests/_client')
+        }
+        server {
+            server()
+            gameDirectory = file('../../runs/mod-tests/_server')
+        }
+    }
+}
+
+dependencies {
+    // APIs de las mods probadas: los jars que descarga run.js y sus jar-in-jar, solo para compilar
+    compileOnly fileTree(dir: 'build/mod-cache', include: ['*.jar', 'nested/*.jar'])
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+}

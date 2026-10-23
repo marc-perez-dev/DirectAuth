@@ -1,0 +1,17 @@
+# Arnés de las pruebas con mods reales (tools/mod-tests). Solo para desarrollo.
+modLoader="javafml"
+loaderVersion="[4,)"
+license="MIT"
+
+[[mods]]
+modId="directauth_modtests"
+version="1.0.0"
+displayName="DirectAuth mod-test harness"
+description='''Drives a real client through scripted scenarios against a dev server running DirectAuth and third-party mods.'''
+
+[[dependencies.directauth_modtests]]
+    modId="neoforge"
+    type="required"
+    versionRange="[21.1,)"
+    ordering="NONE"
+    side="BOTH"
