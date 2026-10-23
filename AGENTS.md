@@ -13,7 +13,7 @@ Single source of truth for any AI coding agent working in this repo (Claude Code
 - **License:** MIT
 - **Side:** server-required, client-required (declared in `neoforge.mods.toml`), but logic is server-side.
 
-The `Documentation/` directory in the repo root is **not part of this mod** — it is the upstream NeoForged docs (Docusaurus v3) cloned for reference and is git-ignored. Do not treat it as production code or modify it as part of mod work.
+The `Documentation-NeoForge/` and `Documentation/` directories in the repo root are **not part of this mod** — they are the upstream NeoForged docs (Docusaurus v3; 1.21.1 lives in `versioned_docs/version-1.21.1/`) and the upstream Forge docs (MkDocs, used by the `forge-1.20.1` branch), copied for reference and git-ignored. Do not treat them as production code or modify them as part of mod work.
 
 ---
 
@@ -59,7 +59,8 @@ DirectAuth/
 │   │   │   └── assets/directauth/    # (lang/ here is placeholder — real i18n is JSON in worldserverconfig)
 │   │   └── templates/META-INF/neoforge.mods.toml  # source for mods.toml expansion
 │   └── generated/resources/  # output of `runData`
-├── Documentation/            # GIT-IGNORED — upstream NeoForged docs, not part of this mod
+├── Documentation-NeoForge/   # GIT-IGNORED — upstream NeoForged docs, not part of this mod
+├── Documentation/            # GIT-IGNORED — upstream Forge docs (forge-1.20.1 branch), not part of this mod
 ├── tools/smoke-test/         # end-to-end tests: real dev server + Mineflayer bots (see its README)
 ├── run/  runs/  run-data/    # gitignored dev runtime dirs (the smoke test uses runs/smoke-test/)
 ├── build/  .gradle/  repo/   # gitignored gradle output
@@ -214,7 +215,7 @@ When changing registration / login flow, preserve all of: `registrationDelay`, `
 
 ### Things that look like bugs but aren't
 - The `assets/examplemod/lang/en_us.json` placeholder file is leftover from the NeoForge mod template; real strings live in `LangConfig`.
-- `Documentation/` is git-ignored and is upstream NeoForged docs, not project documentation. Don't `git add` it.
+- `Documentation-NeoForge/` (NeoForged docs) and `Documentation/` (Forge docs) are git-ignored upstream docs, not project documentation. Don't `git add` them.
 
 ---
 
