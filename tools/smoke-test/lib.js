@@ -52,7 +52,7 @@ const bots = new Set()
  * Conecta un bot. Resuelve cuando aparece en el mundo o cuando lo echan.
  * bot.msgs: mensajes recibidos (sin colores). bot.kickReason: texto del kick (o null).
  */
-function join (username, ip = '127.0.0.1', { timeout = 20000, options = {} } = {}) {
+function join (username, ip = '127.0.0.1', { timeout = 20000, options = {}, channels = [] } = {}) {
   return new Promise((resolve, reject) => {
     const bot = mineflayer.createBot({
       username,
@@ -71,6 +71,19 @@ function join (username, ip = '127.0.0.1', { timeout = 20000, options = {} } = {
     bot.connected = true
     bot.spawned = false
     bots.add(bot)
+    bot.payloads = []
+    bot.windows = []
+    // Canales de mods que el cliente dice soportar (minecraft:register), como haría un cliente
+    // con la mod: sin esto NeoForge no deja que el servidor le envíe esos paquetes
+    if (channels.length) {
+      bot._client.on('state', (state) => {
+        if (state === 'configuration') bot._client.write('custom_payload', { channel: 'minecraft:register', data: Buffer.from(channels.join('\0')) })
+      })
+    }
+    bot._client.on('custom_payload', (p) => {
+      if (p.channel.startsWith('directauth_test:')) bot.payloads.push({ channel: p.channel, value: readString(p.data) })
+    })
+    bot._client.on('open_window', (p) => bot.windows.push(p.windowId))
     bot.on('message', (m) => bot.msgs.push(strip(m.toString())))
     bot.on('kicked', (reason) => { bot.kickReason = textOf(reason) })
     bot.on('error', () => {})
@@ -84,6 +97,33 @@ function join (username, ip = '127.0.0.1', { timeout = 20000, options = {} } = {
     bot._client.on('update_health', (p) => { if (p.health <= 0) { bot.health = 0; onDead() } })
     bot.once('end', () => { clearTimeout(timer); resolve(bot) })
   })
+}
+
+// --- Paquetes de mods (mod directauth_test, ver src/testmod) ---
+// Los payloads de prueba son un String con la codificación de ByteBufCodecs.STRING_UTF8
+function writeString (s) {
+  const body = Buffer.from(s, 'utf8')
+  const len = []
+  let n = body.length
+  do { let b = n & 0x7f; n >>>= 7; if (n) b |= 0x80; len.push(b) } while (n)
+  return Buffer.concat([Buffer.from(len), body])
+}
+function readString (buf) {
+  let n = 0; let shift = 0; let i = 0
+  for (;;) { const b = buf[i++]; n |= (b & 0x7f) << shift; if (!(b & 0x80)) break; shift += 7 }
+  return buf.slice(i, i + n).toString('utf8')
+}
+/** Envía al servidor un payload de mod (como lo haría el cliente de otra mod). */
+function sendPayload (bot, channel, value) {
+  bot._client.write('custom_payload', { channel, data: writeString(value) })
+}
+/** Valores recibidos por un canal de prueba (p. ej. 'directauth_test:screen'). */
+const received = (bot, channel) => bot.payloads.filter((p) => p.channel === channel).map((p) => p.value)
+/** Lo que el mod de pruebas anotó para un jugador: ['action:a1', 'hello:x', 'button:tag:3', ...] */
+async function datestLog (name) {
+  const r = await rcon(`datest log ${name}`)
+  const m = r.match(/\[(.*)\]\s*$/s)
+  return m && m[1] ? m[1].split(',') : []
 }
 
 /** Envía un comando o mensaje y marca el punto desde el que se esperan respuestas. */
@@ -244,5 +284,6 @@ function near (a, b, tol = 1.5) {
 module.exports = {
   RUN, WORLD, CFG_DIR, sleep, strip, lang, re, join, send, expect, expectNo, expectKick, expectConnected,
   quit, quitAll, rcon, closeRcon, db, user, readConfig, setConfig, offlineUUID, serverLogSince, serverLogSize,
-  test, summary, assert, posOf, dimOf, countItem, near, verifiesLikeOldVersions, schemaVersion, dbBackups
+  test, summary, assert, posOf, dimOf, countItem, near, verifiesLikeOldVersions, schemaVersion, dbBackups,
+  sendPayload, received, datestLog
 }

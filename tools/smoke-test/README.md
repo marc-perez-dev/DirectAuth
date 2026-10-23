@@ -44,15 +44,35 @@ node tests.js 'lockout'   # regex on test names
 
 Tests assume a fresh world. When re-running a test against a world that already has its
 accounts, some tests take fresh names from the environment: `JAIL`, `JAIL_IP`, `DEAD`, `DEAD_IP`,
-`DEAD_IP2`, `NOBED`, `PICK`.
+`DEAD_IP2`, `NOBED`, `PICK`. The tests for other mods append `FRESH` to their names
+(`FRESH=2 node tests.js 'menus'`).
+
+## Other mods (test mod `directauth_test`)
+
+The dev server also loads a small test mod, `src/testmod/` in this repo (only in the `server` run,
+never in the DirectAuth jar). It stands in for other mods so the bots can check how DirectAuth
+treats them:
+
+- Optional payloads in both directions (`directauth_test:action`, `hello`, `screen`, `data`). A
+  vanilla client like Mineflayer may use optional payloads; to receive one it first declares the
+  channel with `minecraft:register` (`join(name, ip, { channels: [...] })`).
+- `/datest log <player>`: what the server received from that player (payloads, menu button clicks).
+- `/datest screen|data <player> <value>`, `/datest menu <player> <tag>`: send a payload or open a menu
+  from the server.
+- Players whose names start with `Scr` or `MenuLogin` get a screen payload or a menu when they
+  join; new players named `TpFirst…`/`TpLast…` are teleported to 100.5 -60 100.5 on their first join,
+  before or after DirectAuth's own join handler.
+
+`server.properties` enables command blocks so the tests can check that a jailed op impostor cannot
+rewrite them.
 
 ## Files
 
 | File | What it does |
 |---|---|
-| `tests.js` | Tests against a running server (registration, login, lockout, jail, respawn, sessions, admin commands, premium migration, legacy hashes, config, RCON, races). |
+| `tests.js` | Tests against a running server (registration, login, lockout, jail, respawn, sessions, admin commands, premium migration, legacy hashes, config, RCON, races, other mods' packets and menus, vanilla op packets). |
 | `restart.js` | Phases that need restarts: shutdown with a `/login` in flight, positions surviving a restart, automatic database backup when upgrading an older schema, corrupt `positions.json`, legacy `DirectAuth_users.json` import, malformed config at startup, downgrade and re-upgrade, Turkish locale. |
-| `lib.js` | Helpers: bots, message expectations, RCON, SQLite, player state. |
+| `lib.js` | Helpers: bots, message expectations, RCON, SQLite, player state, test-mod payloads. |
 | `server.sh` | Starts the server like `runServer` but in `runs/smoke-test/`, without GUI, with the console read from the `console` FIFO. |
 | `common.sh`, `run-all.sh`, `restart-run.sh`, `up.sh`, `down.sh` | Orchestration. |
 
@@ -75,7 +95,8 @@ Some tests provoke errors on purpose; `run-all.sh` prints them at the end:
 - Premium auto-login with a real paid account (needs a real Mojang session).
 - Singleplayer / integrated server.
 - Mojang API unreachable (`errMojangUnavailable`).
-- Other mods (`FakePlayer` machines, real FTB Quests data; FTB files are simulated).
+- Real third-party mods (`FakePlayer` machines, real FTB Quests data; FTB files are simulated). The
+  test mod above simulates how other mods talk to the server.
 
 Mineflayer is a protocol client, not the vanilla client: for example it does not roll back a
 predicted block break when the server acknowledges the sequence, so tests do not rely on the

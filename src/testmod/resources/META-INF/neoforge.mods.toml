@@ -1,0 +1,18 @@
+# Mod de pruebas para el smoke test (tools/smoke-test). Solo se carga en el run "server" de
+# desarrollo; nunca va en el jar de DirectAuth.
+modLoader="javafml"
+loaderVersion="[4,)"
+license="MIT"
+
+[[mods]]
+modId="directauth_test"
+version="1.0.0"
+displayName="DirectAuth smoke-test helpers"
+description='''Test-only helpers: optional payloads, a server-opened menu, first-join teleports and /datest commands.'''
+
+[[dependencies.directauth_test]]
+    modId="neoforge"
+    type="required"
+    versionRange="[21.1,)"
+    ordering="NONE"
+    side="BOTH"
