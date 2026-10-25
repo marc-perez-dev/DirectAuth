@@ -173,8 +173,9 @@ async function expectKick (bot, pattern, timeout = 6000) {
 
 async function kickReasonInLog (bot) {
   const name = bot.username.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-  // "<nombre> lost connection: …" en juego; en el login, el GameProfile (…name=<nombre>…) y la IP
-  const rx = new RegExp(`\\]: [^\\n]*?\\b${name}\\b[^\\n]*? lost connection: ([\\s\\S]*?)(?=\\n\\[|$)`, 'g')
+  // "<nombre> lost connection: …" en juego; en el login, el GameProfile (…name=<nombre>,…) y la IP.
+  // El nombre exacto: Notch no debe tomar la línea de Notch#
+  const rx = new RegExp(`\\]: (?:${name}|[^\\n]*?name=${name},[^\\n]*?) lost connection: ([\\s\\S]*?)(?=\\n\\[|$)`, 'g')
   for (let i = 0; i < 20; i++) {
     // Si el servidor se reinició después de entrar el bot, el log empieza de nuevo
     const found = [...serverLogSince(bot.logOffset > serverLogSize() ? 0 : bot.logOffset).matchAll(rx)].pop()
@@ -194,6 +195,12 @@ async function quit (bot) {
   const ended = new Promise((r) => bot.once('end', r))
   bot.quit()
   await Promise.race([ended, sleep(3000)])
+}
+
+/** Espera a que el servidor procese la salida (y guarde los datos del jugador): ya no sale en /list. */
+async function waitGone (name) {
+  const online = async () => (await rcon('list')).replace(/^[^:]*:/, '').split(',').map((n) => n.trim())
+  for (let i = 0; i < 50 && (await online()).includes(name); i++) await sleep(100)
 }
 
 async function quitAll () {
@@ -222,14 +229,16 @@ async function premium (name, id) {
   const textures = Buffer.from(JSON.stringify({ timestamp: Date.now(), profileId: id.replace(/-/g, ''), profileName: name, textures: {} })).toString('base64')
   premiumProfiles.set(name.toLowerCase(), { id: id.replace(/-/g, ''), name, properties: [{ name: 'textures', value: textures }] })
   if (!sessionServer) {
-    sessionServer = http.createServer((req, res) => {
+    const server = http.createServer((req, res) => {
       const url = new URL(req.url, 'http://localhost')
       const profile = url.pathname === '/session/minecraft/hasJoined' && premiumProfiles.get(String(url.searchParams.get('username')).toLowerCase())
       res.writeHead(profile ? 200 : 204, { 'content-type': 'application/json' })
       res.end(profile ? JSON.stringify(profile) : undefined)
     })
-    await new Promise((resolve, reject) => sessionServer.once('error', reject).listen(SESSION_PORT, '127.0.0.1', resolve))
-    sessionServer.unref()
+    // Solo se guarda si escucha: si el puerto está ocupado, cada premium() vuelve a fallar con el error
+    await new Promise((resolve, reject) => server.once('error', reject).listen(SESSION_PORT, '127.0.0.1', resolve))
+    server.unref()
+    sessionServer = server
   }
   return textures
 }
@@ -336,7 +345,7 @@ function near (a, b, tol = 1.5) {
 
 module.exports = {
   RUN, WORLD, CFG_DIR, sleep, strip, lang, re, join, send, expect, expectNo, expectKick, expectConnected,
-  quit, quitAll, rcon, closeRcon, db, user, readConfig, setConfig, offlineUUID, serverLogSince, serverLogSize,
+  quit, quitAll, waitGone, rcon, closeRcon, db, user, readConfig, setConfig, offlineUUID, serverLogSince, serverLogSize,
   test, summary, assert, posOf, dimOf, countItem, near, verifiesLikeOldVersions, schemaVersion, dbBackups,
   sendPayload, received, datestLog, premium, notPremium
 }

@@ -119,6 +119,10 @@ def reobfTestmodJar = tasks.register('reobfTestmodJar', net.neoforged.moddevgrad
 tasks.register('testmodJar') {
     dependsOn reobfTestmodJar
 }
+// La CI solo ejecuta build: así compila también el mod de pruebas
+tasks.named('check') {
+    dependsOn 'compileTestmodJava'
+}
 
 mixin {
     add sourceSets.main, "${mod_id}.refmap.json"

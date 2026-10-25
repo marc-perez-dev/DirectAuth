@@ -17,8 +17,10 @@ JAVA="${JAVA17:-$(ls -d "$HOME"/.gradle/jdks/*-17-*/ 2>/dev/null | grep -v '\.lo
 [ -x "$JAVA" ] || { echo "Java 17 not found: set JAVA17=/path/to/java"; exit 1; }
 # El jar de la versión de ese checkout (build/libs puede tener los de otras versiones y loaders)
 VERSION=$(sed -n 's/^mod_version=//p' "$SRC/gradle.properties")
-JARS=("$SRC"/build/libs/directauth-forge-*-"$VERSION".jar "$SRC"/build/libs/directauth-"$VERSION".jar)
-JARS=($(ls "${JARS[@]}" 2>/dev/null))
+JARS=()
+for jar in "$SRC"/build/libs/directauth-forge-*-"$VERSION".jar "$SRC"/build/libs/directauth-"$VERSION".jar; do
+  [ -f "$jar" ] && JARS+=("$jar")
+done
 [ ${#JARS[@]} -eq 1 ] || { echo "Expected one DirectAuth $VERSION jar in $SRC/build/libs: run 'bash gradlew build testmodJar' in $SRC"; exit 1; }
 # Mod de pruebas (src/testmod, tarea testmodJar); las versiones anteriores no lo tienen
 TESTMOD=("$SRC"/build/testmod/directauth_test-*.jar)
