@@ -74,11 +74,15 @@ public final class JailTraffic {
      * Se comprueba bajo el candado porque release() y discard() corren en otro hilo.
      */
     private static boolean store(ServerGamePacketListenerImpl connection, Consumer<Held> add) {
-        if (!connection.connection.isConnected()) return false; // discard() ya pasó o va a pasar
         UUID uuid = connection.player.getUUID();
-        Held held = HELD.compute(uuid, (key, current) -> current == null || current.connection != connection ? new Held(connection) : current);
+        Held held = HELD.compute(uuid, (key, current) -> {
+            if (current != null && current.connection == connection) return current;
+            if (current != null) drop(current); // de una conexión anterior que no llegó a descartarse
+            return new Held(connection);
+        });
         synchronized (held) {
-            if (held.released || !PlayerRestrictionHandler.isRestricted(connection.player)) {
+            // Conexión cerrada: discard() ya pasó o va a pasar, y no debe quedar nada retenido
+            if (held.released || !connection.connection.isConnected() || !PlayerRestrictionHandler.isRestricted(connection.player)) {
                 if (held.isEmpty()) HELD.remove(uuid, held);
                 return false;
             }
@@ -122,18 +126,19 @@ public final class JailTraffic {
     public static boolean holdFromClient(ServerGamePacketListenerImpl connection, ServerboundCustomPayloadPacket packet) {
         ResourceLocation channel = packet.getIdentifier();
         if (isLoaderPayload(channel)) return false;
-        String type = payloadType(channel, packet.getData());
         if (!PlayerRestrictionHandler.isRestricted(connection.player)) {
             // Recién autenticado pero release() aún no ha corrido: este paquete es más nuevo que el
             // retenido del mismo tipo, que ya no debe procesarse después
             Held held = HELD.get(connection.player.getUUID());
             if (held != null && held.connection == connection) {
+                String type = payloadType(channel, packet.getData());
                 synchronized (held) {
                     if (!held.released) releaseBuffer(held.fromClient.remove(type));
                 }
             }
             return false;
         }
+        String type = payloadType(channel, packet.getData());
         if (listed(DirectAuth.getConfig().heldPayloadExceptions, channel, type)) return false;
         return store(connection, held -> {
             // Vanilla libera el buffer del paquete al terminar de procesarlo: lo conservamos
@@ -148,8 +153,9 @@ public final class JailTraffic {
     }
 
     /**
-     * Paquete que el servidor va a enviar al jugador. Devuelve true si se ha aplazado (o se ha
-     * enviado sin la parte aplazada, en un bundle) y el envío original no debe seguir.
+     * Paquete que el servidor va a enviar al jugador. Devuelve true si se ha aplazado y el envío
+     * original no debe seguir. Solo mira los payloads sueltos: en 1.20.1 ni Forge ni vanilla meten
+     * payloads de mods en un ClientboundBundlePacket (en NeoForge 1.21.1 sí, y main los separa).
      */
     public static boolean deferToClient(ServerGamePacketListenerImpl connection, Packet<?> packet, @Nullable PacketSendListener sendListener) {
         if (!(packet instanceof ClientboundCustomPayloadPacket custom) || !PlayerRestrictionHandler.isRestricted(connection.player)) return false;

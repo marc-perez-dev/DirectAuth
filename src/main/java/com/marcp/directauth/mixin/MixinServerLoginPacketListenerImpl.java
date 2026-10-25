@@ -39,6 +39,12 @@ public abstract class MixinServerLoginPacketListenerImpl {
     @Unique
     private boolean directAuth$premiumHandshake = false;
 
+    // La cuenta leída en la fase 2 (null = no registrada). handleAcceptedLogin llega varios ticks
+    // después, tras la negociación de Forge, y para entonces la caché puede haberla perdido (la
+    // vacía la desconexión de otra conexión con el mismo nombre)
+    @Unique
+    private UserData directAuth$account;
+
     @Inject(method = "handleHello", at = @At("HEAD"), cancellable = true)
     public void onHandleHello(ServerboundHelloPacket packet, CallbackInfo ci) {
         // Si el servidor es premium nativo, ignoramos
@@ -90,6 +96,7 @@ public abstract class MixinServerLoginPacketListenerImpl {
         // Un usuario no registrado se queda como marcador en la caché, así que nunca hace falta
         // volver a leer la DB en el hilo del servidor.
         UserData data = DirectAuth.getLoginManager().peekPreLoadedData(username);
+        this.directAuth$account = data;
 
         // Lógica de Premium (Handshake de encriptación)
         if (data != null && data.isPremium() && data.getOnlineUUID() != null) {
@@ -127,19 +134,22 @@ public abstract class MixinServerLoginPacketListenerImpl {
     @Inject(method = "handleAcceptedLogin", at = @At("HEAD"))
     private void directAuth$accountProfile(CallbackInfo ci) {
         GameProfile profile = this.gameProfile;
-        if (profile == null || this.server.usesAuthentication() || profile == this.server.getSingleplayerProfile()) return;
+        if (profile == null || profile == this.server.getSingleplayerProfile()) return;
 
-        // Mojang lo confirmó: hicimos el handshake premium y el hilo de autenticación dejó un perfil
-        // completo (el singleplayer, si la verificación falla, deja el perfil sin UUID).
+        // Mojang lo confirmó: hubo handshake de cifrado (el de DirectAuth para una cuenta premium, o
+        // el de vanilla en un servidor online o abierto a LAN) y el hilo de autenticación dejó un
+        // perfil completo (el singleplayer, si la verificación falla, deja el perfil sin UUID).
         // ConnectionHandler solo da por buena una cuenta premium así.
-        boolean fromMojang = this.directAuth$premiumHandshake && profile.getId() != null
+        boolean handshake = this.directAuth$premiumHandshake
+            || this.server.usesAuthentication() && !this.connection.isMemoryConnection();
+        boolean fromMojang = handshake && profile.getId() != null
             && !profile.getId().equals(UUIDUtil.createOfflinePlayerUUID(profile.getName()));
         if (fromMojang) {
             ((MojangVerifiedConnection) this.connection).directAuth$setMojangUUID(profile.getId());
         }
 
-        if (DirectAuth.getLoginManager() == null) return;
-        UserData data = DirectAuth.getLoginManager().peekPreLoadedData(profile.getName());
+        if (this.server.usesAuthentication()) return;
+        UserData data = this.directAuth$account;
         if (data == null || data.getAccountUUID() == null) return;
         if (data.isPremium()
                 ? !fromMojang || !profile.getId().toString().equalsIgnoreCase(data.getOnlineUUID())
