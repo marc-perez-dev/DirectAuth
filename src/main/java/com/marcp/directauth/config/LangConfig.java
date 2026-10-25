@@ -48,14 +48,12 @@ public class LangConfig {
     public String msgVerifying = "§eVerifying account with Mojang...";
     public String errMojangNotFound = "§cNo paid Minecraft account found with this username.";
     public String errMojangUnavailable = "§cCould not reach Mojang's servers. Please try again later.";
-    public String errPremiumMigrationFailed = "§cYour player data could not be migrated, so Online Mode was not enabled. Nothing was changed.";
     public String msgMojangHint = "§7Ensure you are using a legitimate Minecraft account.";
     public String errUUIDMismatch = "§cYour UUID does not match the Mojang account.";
     public String msgSessionHint = "§7You are using an offline session.";
-    public String msgPremiumSuccess = "§a✓ Account verified as Online Mode.";
-    public String msgPremiumKick = "§aAccount verified!\n§ePlease rejoin to apply changes.";
+    public String msgPremiumEnabled = "§a✓ Online Mode enabled. From your next join you will be logged in automatically with your Minecraft account.";
     public String msgAutoLoginHint = "§7Auto-login is now enabled for this account.";
-    public String msgOnlineModeWarning = "§6WARNING! §eEnabling Online Mode will migrate your player data (e.g., inventory, stats, advancements). While DirectAuth tries to migrate data from other mods, there is a small risk of losing mod-specific data if not configured correctly. Please ensure your server owner has configured all mod data folders in directauth-config.json before proceeding, or make a backup.";
+    public String msgOnlineModeKeepsData = "§eYour inventory, progress and mod data stay as they are: Online Mode only changes how you log in (automatically, with your Minecraft account, instead of with a password).";
 
     // --- Admin Messages ---
     public String msgPremiumWarning = "§cWARNING! §7You are about to enable Online Mode.\n§7If you do not own this account, §cyou will lose access.\n§7Type §b/online <your_password> §7to confirm.";
@@ -66,9 +64,7 @@ public class LangConfig {
     public String errAdminUsageUnregister = "§cUsage: /directauth unregister <user>";
     public String msgConfigReloaded = "§a✓ DirectAuth configuration reloaded.";
     public String errConfigReloadFailed = "§cDirectAuth-config.json could not be read (see the server log). The previous settings are still active.";
-    public String errAdminPlayerMustBeOnline = "§c%s must be online and logged in to change their Online Mode status, because their player data has to be migrated.";
-    public String errAdminMigrationFailed = "§cThe player data of %s could not be migrated, so nothing was changed. See the server log.";
-    public String msgAdminModeChangedKick = "§eAn administrator changed your account's Online Mode status.\n§ePlease rejoin to apply the change.";
+    public String errAdminEnableNeedsPlayer = "§c%s must be online and logged in to enable their Online Mode: their account keeps the UUID they play with, and it depends on the exact case of their name.";
     public String msgAdminPasswordResetKick = "§eAn administrator reset your password.\n§ePlease rejoin and log in with the new one.";
     public String msgLangReset = "§a✓ DirectAuth built-in (English/Spanish) language files reset to defaults.";
 
@@ -183,14 +179,12 @@ public class LangConfig {
             msgVerifying = "§eVerificando cuenta con Mojang...";
             errMojangNotFound = "§cNo se encontró una cuenta de Minecraft pagada con este nombre.";
             errMojangUnavailable = "§cNo se pudo contactar con los servidores de Mojang. Inténtalo de nuevo más tarde.";
-            errPremiumMigrationFailed = "§cNo se pudieron migrar tus datos de jugador, así que no se activó el Modo Online. No se ha cambiado nada.";
             msgMojangHint = "§7Asegúrate de estar usando una cuenta legítima de Minecraft.";
             errUUIDMismatch = "§cTu UUID no coincide con la cuenta de Mojang.";
             msgSessionHint = "§7Estás usando una sesión offline.";
-            msgPremiumSuccess = "§a✓ Cuenta verificada como Modo Online.";
-            msgPremiumKick = "§a¡Cuenta verificada!\n§ePor favor, vuelve a entrar para aplicar los cambios.";
+            msgPremiumEnabled = "§a✓ Modo Online activado. A partir de la próxima vez que entres, se iniciará sesión automáticamente con tu cuenta de Minecraft.";
             msgAutoLoginHint = "§7El auto-login está activado para esta cuenta.";
-            msgOnlineModeWarning = "§6¡ADVERTENCIA! §eActivar el Modo Online migrará tus datos de jugador (ej. inventario, estadísticas, avances). Aunque DirectAuth intenta migrar datos de otros mods, existe un pequeño riesgo de perder datos específicos de mods si no se configura correctamente. Asegúrate de que el dueño de tu servidor haya configurado todas las carpetas de datos de mods en directauth-config.json antes de continuar, o haz una copia de seguridad.";
+            msgOnlineModeKeepsData = "§eTu inventario, tu progreso y los datos de las mods se quedan como están: el Modo Online solo cambia cómo entras (automáticamente, con tu cuenta de Minecraft, en vez de con contraseña).";
 
             // --- Admin Messages ---
             msgPremiumWarning = "§c¡ADVERTENCIA! §7Estás a punto de activar el Modo Online.\n§7Si no eres dueño de esta cuenta, §cperderás el acceso.\n§7Escribe §b/online <tu_contraseña> §7para confirmar.";
@@ -201,9 +195,7 @@ public class LangConfig {
             errAdminUsageUnregister = "§cUso: /directauth unregister <usuario>";
             msgConfigReloaded = "§a✓ Configuración de DirectAuth recargada.";
             errConfigReloadFailed = "§cNo se pudo leer DirectAuth-config.json (consulta el log del servidor). Se mantiene la configuración anterior.";
-            errAdminPlayerMustBeOnline = "§c%s debe estar conectado y con la sesión iniciada para cambiar su Modo Online, porque hay que migrar sus datos de jugador.";
-            errAdminMigrationFailed = "§cNo se pudieron migrar los datos de jugador de %s, así que no se ha cambiado nada. Consulta el log del servidor.";
-            msgAdminModeChangedKick = "§eUn administrador ha cambiado el Modo Online de tu cuenta.\n§eVuelve a entrar para aplicar el cambio.";
+            errAdminEnableNeedsPlayer = "§c%s debe estar conectado y con la sesión iniciada para activar su Modo Online: la cuenta conserva la UUID con la que juega, y esta depende de las mayúsculas exactas de su nombre.";
             msgAdminPasswordResetKick = "§eUn administrador ha restablecido tu contraseña.\n§eVuelve a entrar e inicia sesión con la nueva.";
             msgLangReset = "§a✓ Archivos de idioma integrados de DirectAuth (Inglés/Español) restablecidos a los valores por defecto.";
 

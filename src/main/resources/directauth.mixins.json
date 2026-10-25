@@ -12,8 +12,12 @@
     "MixinServerGamePacketListenerImpl",
     "MixinRconConsoleSource",
     "MixinItemPhysicPackets",
-    "PlayerListAccessor",
-    "ServerPlayerAccessor"
+    "ServerPlayerAccessor",
+    "MixinServerGamePacketListenerCustomPayload",
+    "MixinConnection",
+    "MixinServerPlayerOpenMenu",
+    "MixinNetworkHooksOpenScreen",
+    "MixinSimpleChannel"
   ],
   "injectors": {
     "defaultRequire": 1

@@ -3,11 +3,12 @@ package com.marcp.directauth.config;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonParseException;
-import com.marcp.directauth.data.MigrationMode;
 
 import java.io.*;
 import java.nio.file.*;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 public class ModConfig {
@@ -34,37 +35,34 @@ public class ModConfig {
     public int registrationDelay = 1; // 1 second wait before registering
     public int maxAccountsPerIP = 5;  // Max 5 accounts per IP
 
-    // --- Data Migration Settings ---
-    // Mapa: Ruta de la carpeta -> Modo de migración
-    public Map<String, MigrationMode> migrationMap = new LinkedHashMap<>();
-    
+    // --- Other mods ---
+    // Ids por defecto de las listas de otras mods, con la versión de estos valores por defecto en la
+    // que se añadió cada uno. Una config escrita con una versión anterior recibe al cargarse los que
+    // le falten (los usuarios no editan la config a mano); los que el admin quitó después no vuelven.
+    private static final int OTHER_MODS_DEFAULTS = 1;
+    private static final Map<String, Integer> DEFAULT_SCREEN_PAYLOADS = new LinkedHashMap<>();
+    private static final Map<String, Integer> DEFAULT_HELD_EXCEPTIONS = new LinkedHashMap<>();
+    static {
+    }
+
+    // Paquetes de otras mods que abren una pantalla al entrar. A un jugador sin autenticar se le
+    // entregan al autenticarse (solo el último de cada tipo), para que no le tapen el chat antes.
+    // Cada entrada es un tipo ("canal#índice" en un SimpleChannel) o un canal entero.
+    public List<String> deferredScreenPayloads = new ArrayList<>(DEFAULT_SCREEN_PAYLOADS.keySet());
+    // Paquetes de otras mods que un jugador sin autenticar sí puede enviar. El resto se retiene
+    // hasta que se autentica (y se descarta si se desconecta antes). Solo para respuestas que una
+    // mod espera con plazo y que no hacen nada en nombre de la cuenta.
+    public List<String> heldPayloadExceptions = new ArrayList<>(DEFAULT_HELD_EXCEPTIONS.keySet());
+    // Escribe en el log los paquetes de otras mods que recibe un jugador sin autenticar, para
+    // encontrar el tipo de una pantalla que añadir a deferredScreenPayloads.
+    public boolean logJailPayloads = false;
+    // Hasta qué versión de los valores por defecto de las dos listas anteriores se han aplicado
+    public int otherModsDefaultsVersion = OTHER_MODS_DEFAULTS;
+
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
     
     // Runtime reference to the loaded language config
     private transient LangConfig langConfig;
-
-    public ModConfig() {
-        setDefaults();
-    }
-
-    private void setDefaults() {
-        // Vanilla Data
-        migrationMap.put("playerdata", MigrationMode.RENAME);
-        migrationMap.put("stats", MigrationMode.RENAME);
-        migrationMap.put("advancements", MigrationMode.RENAME);
-
-        // Mod Support - Defaults seguros
-        
-        // Sistema de tumbas (Carpeta con UUID)
-        migrationMap.put("deaths", MigrationMode.DIRECTORY);
-        
-        // FTB Quests (Archivo .snbt con UUID, contenido interno SIN guiones)
-        // Nota: A veces está en 'ftbquests/player_data', pero cubrimos la raíz por si acaso
-        migrationMap.put("ftbquests", MigrationMode.TEXT_REPLACE);
-        
-        // SkinRestorer (JSON simple, solo importa el nombre del archivo)
-        migrationMap.put("skinrestorer", MigrationMode.RENAME);
-    }
 
     /** Thrown when the config file exists but cannot be read or parsed. */
     public static class ConfigException extends RuntimeException {
@@ -89,23 +87,18 @@ public class ModConfig {
                 throw new ConfigException("Could not read " + configPath + ": the file is empty", null);
             }
 
-            // Asegurar que el mapa no sea nulo si viene de una config vieja
-            if (config.migrationMap == null || config.migrationMap.isEmpty()) {
-                config.migrationMap = new LinkedHashMap<>();
-                config.setDefaults();
+            // Listas puestas a null a mano: valores por defecto
+            ModConfig defaults = new ModConfig();
+            if (config.deferredScreenPayloads == null) config.deferredScreenPayloads = defaults.deferredScreenPayloads;
+            if (config.heldPayloadExceptions == null) config.heldPayloadExceptions = defaults.heldPayloadExceptions;
+            // Ids por defecto añadidos en versiones posteriores a la que escribió el fichero
+            if (config.otherModsDefaultsVersion < OTHER_MODS_DEFAULTS) {
+                addNewDefaults(config.deferredScreenPayloads, DEFAULT_SCREEN_PAYLOADS, config.otherModsDefaultsVersion);
+                addNewDefaults(config.heldPayloadExceptions, DEFAULT_HELD_EXCEPTIONS, config.otherModsDefaultsVersion);
+                config.otherModsDefaultsVersion = OTHER_MODS_DEFAULTS;
             }
-            // Un modo desconocido (typo en el JSON) llega como null: se ignora esa entrada, pero NO
-            // se reescribe el fichero, para que el admin pueda corregirla en vez de perderla
-            java.util.List<String> invalidModes = new java.util.ArrayList<>();
-            config.migrationMap.forEach((folder, mode) -> { if (mode == null) invalidModes.add(folder); });
-            if (invalidModes.isEmpty()) {
-                config.save(configPath); // Guardar para actualizar campos nuevos
-            } else {
-                invalidModes.forEach(config.migrationMap::remove);
-                com.marcp.directauth.DirectAuth.LOGGER.warn(
-                    "DirectAuth: Unknown migration mode for {} in {} (valid: RENAME, DIRECTORY, TEXT_REPLACE). Those folders will NOT be migrated until it is fixed; the file was not rewritten.",
-                    invalidModes, configPath.getFileName());
-            }
+
+            config.save(configPath); // Guardar para actualizar campos nuevos (y quitar los que ya no existen)
         } else {
             config = new ModConfig();
             config.save(configPath);
@@ -113,6 +106,12 @@ public class ModConfig {
 
         config.loadLanguages(configPath.getParent());
         return config;
+    }
+
+    private static void addNewDefaults(List<String> list, Map<String, Integer> defaults, int appliedVersion) {
+        defaults.forEach((id, version) -> {
+            if (version > appliedVersion && !list.contains(id)) list.add(id);
+        });
     }
 
     /** Built-in defaults plus the language files, used when the config file cannot be read at startup. */

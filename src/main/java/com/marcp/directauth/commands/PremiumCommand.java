@@ -1,10 +1,8 @@
 package com.marcp.directauth.commands;
 
 import com.marcp.directauth.DirectAuth;
-import com.marcp.directauth.auth.AccountModeSwitch;
 import com.marcp.directauth.auth.AuthTasks;
 import com.marcp.directauth.auth.MojangAPI;
-import com.marcp.directauth.data.UserData;
 import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.context.CommandContext;
@@ -17,14 +15,7 @@ import java.util.concurrent.CompletableFuture;
 
 public class PremiumCommand {
 
-    private enum Status { NOT_FOUND, ALREADY_PREMIUM, NEEDS_CONFIRMATION, WRONG_PASSWORD, MOJANG_UNAVAILABLE, NO_MOJANG_ACCOUNT, VERIFIED }
-
-    /** Resultado de la parte asíncrona (DB, PBKDF2 y Mojang). */
-    private record Verification(Status status, UserData user, String onlineUUID) {
-        static CompletableFuture<Verification> of(Status status) {
-            return CompletableFuture.completedFuture(new Verification(status, null, null));
-        }
-    }
+    private enum Status { NOT_FOUND, ALREADY_PREMIUM, NEEDS_CONFIRMATION, WRONG_PASSWORD, MOJANG_UNAVAILABLE, NO_MOJANG_ACCOUNT, ENABLED }
 
     public static void register(CommandDispatcher<CommandSourceStack> dispatcher) {
         dispatcher.register(Commands.literal("online")
@@ -49,41 +40,44 @@ public class PremiumCommand {
         if (!AuthTasks.begin(player)) return 0;
 
         String username = player.getGameProfile().getName();
+        String currentUUID = player.getStringUUID();
         if (password != null) {
             player.sendSystemMessage(Component.literal(DirectAuth.getConfig().getLang().msgVerifying));
         }
 
-        CompletableFuture<Verification> verification = DirectAuth.getDatabase().getUserAsync(username).thenCompose(user -> {
-            if (user == null) return Verification.of(Status.NOT_FOUND);
-            if (user.isPremium()) return Verification.of(Status.ALREADY_PREMIUM);
-            if (password == null) return Verification.of(Status.NEEDS_CONFIRMATION);
+        CompletableFuture<Status> result = DirectAuth.getDatabase().getUserAsync(username).thenCompose(user -> {
+            if (user == null) return CompletableFuture.completedFuture(Status.NOT_FOUND);
+            if (user.isPremium()) return CompletableFuture.completedFuture(Status.ALREADY_PREMIUM);
+            if (password == null) return CompletableFuture.completedFuture(Status.NEEDS_CONFIRMATION);
 
             return DirectAuth.getLoginManager().verifyPasswordAsync(password, user.getPasswordHash()).thenCompose(check -> {
-                if (!check.matches()) return Verification.of(Status.WRONG_PASSWORD);
+                if (!check.matches()) return CompletableFuture.completedFuture(Status.WRONG_PASSWORD);
                 return MojangAPI.getOnlineUUID(username).handle((uuid, error) -> {
                     if (error != null) {
                         DirectAuth.LOGGER.warn("DirectAuth: Error querying Mojang API for {}: {}", username, error.getMessage());
-                        return new Verification(Status.MOJANG_UNAVAILABLE, null, null);
+                        return CompletableFuture.completedFuture(Status.MOJANG_UNAVAILABLE);
                     }
-                    String formatted = MojangAPI.formatUUID(uuid);
-                    return formatted == null
-                        ? new Verification(Status.NO_MOJANG_ACCOUNT, null, null)
-                        : new Verification(Status.VERIFIED, user, formatted);
-                });
+                    String onlineUUID = MojangAPI.formatUUID(uuid);
+                    if (onlineUUID == null) return CompletableFuture.completedFuture(Status.NO_MOJANG_ACCOUNT);
+                    // La cuenta seguirá jugando con la UUID con la que juega (ver UserData)
+                    String playerUUID = user.getAccountUUID() != null ? user.getAccountUUID() : currentUUID;
+                    return DirectAuth.getDatabase().setOnlineModeAsync(username, true, onlineUUID, playerUUID)
+                        .thenApply(updated -> updated ? Status.ENABLED : Status.NOT_FOUND);
+                }).thenCompose(status -> status);
             });
         });
 
-        AuthTasks.finish(player, verification, PremiumCommand::onVerification);
+        AuthTasks.finish(player, result, PremiumCommand::onResult);
         return 1;
     }
 
-    private static void onVerification(ServerPlayer player, Verification verification) {
+    private static void onResult(ServerPlayer player, Status status) {
         var lang = DirectAuth.getConfig().getLang();
-        switch (verification.status()) {
+        switch (status) {
             case NOT_FOUND -> player.sendSystemMessage(Component.literal(lang.errUserNotFound));
             case ALREADY_PREMIUM -> player.sendSystemMessage(Component.literal(lang.msgAlreadyPremium));
             case NEEDS_CONFIRMATION -> {
-                player.sendSystemMessage(Component.literal(lang.msgOnlineModeWarning));
+                player.sendSystemMessage(Component.literal(lang.msgOnlineModeKeepsData));
                 player.sendSystemMessage(Component.literal(lang.msgPremiumWarning));
             }
             case WRONG_PASSWORD -> player.sendSystemMessage(Component.literal(lang.errWrongPasswordSimple));
@@ -92,20 +86,8 @@ public class PremiumCommand {
                 player.sendSystemMessage(Component.literal(lang.errMojangNotFound));
                 player.sendSystemMessage(Component.literal(lang.msgMojangHint));
             }
-            case VERIFIED -> {
-                // Guardar, migrar y expulsar ocurren en esta llamada (sin ventana para seguir
-                // jugando con los ficheros ya movidos). Si la migración falla, el future ya está
-                // completado con false y el jugador sigue conectado.
-                String username = verification.user().getUsername();
-                AccountModeSwitch.apply(player, verification.user(), true, verification.onlineUUID(), lang.msgPremiumKick)
-                    .whenComplete((switched, error) -> {
-                        if (error != null) {
-                            DirectAuth.LOGGER.error("DirectAuth: Online Mode for {} was not saved; the player keeps offline mode", username, error);
-                        } else if (!switched) {
-                            player.sendSystemMessage(Component.literal(DirectAuth.getConfig().getLang().errPremiumMigrationFailed));
-                        }
-                    });
-            }
+            // Sigue jugando: no cambia nada hasta su próxima entrada, ya con Mojang
+            case ENABLED -> player.sendSystemMessage(Component.literal(lang.msgPremiumEnabled));
         }
     }
 }
