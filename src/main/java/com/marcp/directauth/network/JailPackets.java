@@ -1,5 +1,10 @@
 package com.marcp.directauth.network;
 
+import com.marcp.directauth.DirectAuth;
+import com.marcp.directauth.mixin.ServerGamePacketListenerAccessor;
+import net.minecraft.network.chat.Component;
+import net.minecraft.network.chat.LastSeenMessages;
+import net.minecraft.network.chat.SignedMessageChain;
 import net.minecraft.network.protocol.Packet;
 import net.minecraft.network.protocol.common.ServerboundClientInformationPacket;
 import net.minecraft.network.protocol.common.ServerboundCustomPayloadPacket;
@@ -36,7 +41,10 @@ import net.minecraft.network.protocol.game.ServerboundSwingPacket;
 import net.minecraft.network.protocol.game.ServerboundUseItemOnPacket;
 import net.minecraft.network.protocol.game.ServerboundUseItemPacket;
 import net.minecraft.network.protocol.ping.ServerboundPingRequestPacket;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.server.network.ServerGamePacketListenerImpl;
 
+import java.util.Optional;
 import java.util.Set;
 
 /**
@@ -59,9 +67,9 @@ public final class JailPackets {
         ServerboundConfigurationAcknowledgedPacket.class, ServerboundChunkBatchReceivedPacket.class,
         // Paquetes de mods: los retiene JailTraffic
         ServerboundCustomPayloadPacket.class,
-        // Chat y comandos (los filtra PlayerRestrictionHandler: solo /register, /login, /online)
-        ServerboundChatPacket.class, ServerboundChatCommandPacket.class, ServerboundChatCommandSignedPacket.class,
-        ServerboundChatAckPacket.class, ServerboundChatSessionUpdatePacket.class, ServerboundCommandSuggestionPacket.class,
+        // Comandos (los filtra PlayerRestrictionHandler: solo /register, /login, /online); el chat
+        // no se procesa (ver dropChat)
+        ServerboundChatCommandPacket.class, ServerboundChatCommandSignedPacket.class, ServerboundChatAckPacket.class, ServerboundChatSessionUpdatePacket.class, ServerboundCommandSuggestionPacket.class,
         // Movimiento (el ancla lo corrige) y estado del jugador
         ServerboundMovePlayerPacket.class, ServerboundAcceptTeleportationPacket.class, ServerboundPlayerInputPacket.class,
         ServerboundPlayerCommandPacket.class, ServerboundPlayerAbilitiesPacket.class, ServerboundMoveVehiclePacket.class,
@@ -77,6 +85,33 @@ public final class JailPackets {
     );
 
     private JailPackets() {
+    }
+
+    /**
+     * Mensaje de chat (no un comando) de un jugador en la jaula: no lo ve nadie, ni siquiera otras
+     * mods que leen el chat antes de ServerChatEvent (la IA de aldeanos de MCA engancha el principio
+     * de handleChat y lo envía a un servicio externo). Se valida como en vanilla handleChat, sin
+     * difundirlo: así los mensajes vistos y la cadena de mensajes firmados del servidor avanzan
+     * igual que en el cliente, y el chat sigue funcionando tras /login (con el chat firmado, un
+     * eslabón sin avanzar rechazaría su siguiente mensaje). Hilo de red.
+     */
+    public static void dropChat(ServerGamePacketListenerImpl connection, ServerboundChatPacket chat) {
+        ServerGamePacketListenerAccessor vanilla = (ServerGamePacketListenerAccessor) connection;
+        Optional<LastSeenMessages> lastSeen = vanilla.callUnpackAndApplyLastSeen(chat.lastSeenMessages());
+        if (lastSeen.isEmpty()) return; // vanilla ya ha desconectado
+        ServerPlayer player = connection.player;
+        // tryHandleChat lo pasa al hilo del servidor con server.execute, que al detenerse lo
+        // ejecutaría aquí mismo: entonces se descarta (como AuthTasks.onServerThread)
+        vanilla.callTryHandleChat(chat.message(), () -> {
+            if (!player.server.isSameThread()) return;
+            try {
+                vanilla.callGetSignedMessage(chat, lastSeen.get());
+            } catch (SignedMessageChain.DecodeException e) {
+                vanilla.callHandleMessageDecodeFailure(e);
+                return;
+            }
+            player.sendSystemMessage(Component.literal(DirectAuth.getConfig().getLang().msgUseCommands));
+        });
     }
 
     public static boolean allowed(Packet<?> packet) {

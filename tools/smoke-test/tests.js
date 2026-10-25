@@ -145,11 +145,13 @@ const rconTest = async (cmd) => /Test passed/.test(await T.rcon(cmd))
     await T.expect(b, L.msgLoginRequest)
     await T.sleep(500)
 
-    // Chat: bloqueado y no llega a los demás
+    // Chat: bloqueado y no llega a los demás, ni a las mods que leen el chat (la IA de MCA)
     obs.mark = obs.msgs.length
+    await T.rcon('datest clear')
     T.send(b, 'hello_secret_chat')
     await T.expect(b, L.msgUseCommands)
     await T.expectNo(obs, /hello_secret_chat/, 800)
+    T.assert(!(await T.datestLog(JAIL)).some((e) => e.startsWith('chat:')), 'a mod saw the chat of a jailed player')
 
     // Comandos fuera de la lista blanca
     T.send(b, '/me hi')
@@ -249,6 +251,8 @@ const rconTest = async (cmd) => /Test passed/.test(await T.rcon(cmd))
     obs.mark = obs.msgs.length
     T.send(b, 'hello_after_login')
     await T.expect(obs, /hello_after_login/)
+    // Control positivo: las mods ven el chat tras /login (y la validación del chat sigue cuadrando)
+    T.assert((await T.datestLog(JAIL)).includes('chat:hello_after_login'), 'control: mods did not see the chat after /login')
 
     // Controles positivos: tras el login sí se puede cambiar de mano, usar el botón central,
     // tirar y romper
@@ -303,18 +307,12 @@ const rconTest = async (cmd) => /Test passed/.test(await T.rcon(cmd))
     // Plataforma con un nexo cargado en el Nether
     // Mantener cargado el chunk del nexo para poder comprobarlo aunque no haya nadie en el Nether
     await T.rcon('execute in minecraft:the_nether run forceload add 0 0 15 15')
-    // Primero llevar al jugador (si no, el chunk no está cargado y fill/setblock fallan)
-    await T.rcon(`execute in minecraft:the_nether run tp ${DEAD} 10.5 70 12.5`)
-    for (let i = 0; i < 100 && !(/nether/.test(b.game.dimension) && b.blockAt(new Vec3(10, 69, 10))); i++) await T.sleep(100)
-    await T.sleep(500)
+    // La plataforma antes de llevar al jugador: si no, puede caer a la lava mientras se construye
+    // (fill falla hasta que el chunk forzado se carga)
     for (let i = 0; i < 100 && !/Successfully/.test(await T.rcon('execute in minecraft:the_nether run fill 6 69 6 14 75 14 minecraft:air')); i++) await T.sleep(100)
     await T.rcon('execute in minecraft:the_nether run fill 6 69 6 14 69 14 minecraft:obsidian')
     await T.rcon('execute in minecraft:the_nether run setblock 10 70 10 minecraft:respawn_anchor[charges=2]')
     T.assert(await rconTest('execute in minecraft:the_nether if block 10 70 10 minecraft:respawn_anchor[charges=2]'), 'anchor setup failed')
-    // Salir y volver a entrar al Nether para que el bot reciba el chunk ya construido
-    await T.rcon(`execute in minecraft:overworld run tp ${DEAD} 0.5 -60 0.5`)
-    for (let i = 0; i < 50 && !/overworld/.test(b.game.dimension); i++) await T.sleep(100)
-    await T.sleep(500)
     await T.rcon(`execute in minecraft:the_nether run tp ${DEAD} 10.5 70 12.5`)
     let anchor = null
     for (let i = 0; i < 100 && !(anchor && anchor.name === 'respawn_anchor'); i++) { await T.sleep(100); anchor = b.blockAt(new Vec3(10, 70, 10)) }

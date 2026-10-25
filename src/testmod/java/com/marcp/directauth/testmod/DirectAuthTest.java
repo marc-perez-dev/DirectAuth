@@ -22,6 +22,7 @@ import net.neoforged.bus.api.IEventBus;
 import net.neoforged.fml.common.Mod;
 import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.event.RegisterCommandsEvent;
+import net.neoforged.neoforge.event.ServerChatEvent;
 import net.neoforged.neoforge.event.entity.player.PlayerEvent;
 import net.neoforged.neoforge.network.PacketDistributor;
 import net.neoforged.neoforge.network.event.RegisterPayloadHandlersEvent;
@@ -85,6 +86,8 @@ public class DirectAuthTest {
         NeoForge.EVENT_BUS.addListener(DirectAuthTest::registerCommands);
         NeoForge.EVENT_BUS.addListener(EventPriority.HIGHEST, DirectAuthTest::onLoginFirst);
         NeoForge.EVENT_BUS.addListener(EventPriority.LOWEST, DirectAuthTest::onLoginLast);
+        // Como una mod que lee el chat (la IA de aldeanos de MCA): lo ve antes que nadie, incluso si luego se cancela
+        NeoForge.EVENT_BUS.addListener(EventPriority.HIGHEST, true, (ServerChatEvent event) -> log(event.getPlayer(), "chat:" + event.getRawText()));
     }
 
     private static ResourceLocation id(String path) {

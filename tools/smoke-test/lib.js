@@ -66,6 +66,7 @@ function join (username, ip = '127.0.0.1', { timeout = 20000, options = {}, chan
       ...options
     })
     bot.ip = ip
+    bot.logOffset = serverLogSize()
     bot.msgs = []
     bot.mark = 0
     bot.kickReason = null
@@ -89,8 +90,9 @@ function join (username, ip = '127.0.0.1', { timeout = 20000, options = {}, chan
     bot._client.on('player_info', (p) => bot.playerInfo.push(p))
     bot.on('message', (m) => bot.msgs.push(strip(m.toString())))
     bot.on('kicked', (reason) => { bot.kickReason = textOf(reason) })
-    bot.on('error', () => {})
-    bot.on('end', () => { bot.connected = false; bots.delete(bot) })
+    // Se guardan para explicar una desconexión sin motivo (ver expectKick)
+    bot.on('error', (e) => { bot.lastError = e })
+    bot.on('end', (reason) => { bot.connected = false; bot.endReason = reason; bots.delete(bot) })
     const timer = setTimeout(() => reject(new Error(`${username}: no spawn in ${timeout}ms`)), timeout)
     bot.once('spawn', () => { bot.spawned = true; clearTimeout(timer); resolve(bot) })
     // Un jugador que entra muerto no recibe 'spawn' hasta reaparecer
@@ -160,8 +162,23 @@ async function expectKick (bot, pattern, timeout = 6000) {
   const start = Date.now()
   while (bot.connected && Date.now() - start < timeout) await sleep(50)
   if (bot.connected) throw new Error(`${bot.username}: expected kick ${rx}, still connected`)
-  if (!rx.test(bot.kickReason || '')) throw new Error(`${bot.username}: kick reason "${bot.kickReason}" does not match ${rx}`)
+  // Si el servidor cierra mientras el bot aún le envía paquetes (un kick justo al entrar), el
+  // cierre llega como reset y Linux descarta lo recibido sin leer, el paquete del kick incluido:
+  // entonces cuenta el motivo con el que el servidor lo echó, según su log
+  if (!bot.kickReason && bot.lastError?.code === 'ECONNRESET') bot.kickReason = await kickReasonInLog(bot)
+  if (!rx.test(bot.kickReason || '')) throw new Error(`${bot.username}: kick reason "${bot.kickReason}" does not match ${rx} (end: ${bot.endReason}, error: ${bot.lastError})`)
   return bot.kickReason
+}
+
+async function kickReasonInLog (bot) {
+  const name = bot.username.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const rx = new RegExp(`\\]: ${name} lost connection: ([\\s\\S]*?)(?=\\n\\[|$)`, 'g')
+  for (let i = 0; i < 20; i++) {
+    const found = [...serverLogSince(bot.logOffset).matchAll(rx)].pop()
+    if (found) return found[1].trim()
+    await sleep(100)
+  }
+  return null
 }
 
 async function expectConnected (bot, ms = 1000) {
@@ -253,16 +270,22 @@ const serverLogSize = () => fs.statSync(SERVER_LOG).size
 
 // --- Runner ---
 const results = []
+// Una prueba atascada (un bot que espera algo que no llega) falla en vez de colgar la batería
+const TEST_TIMEOUT = 180000
 async function test (name, fn) {
   const t0 = Date.now()
+  let timer
   try {
-    await fn()
+    await Promise.race([fn(), new Promise((resolve, reject) => {
+      timer = setTimeout(() => reject(new Error(`timed out after ${TEST_TIMEOUT / 1000}s`)), TEST_TIMEOUT)
+    })])
     results.push({ name, ok: true })
     console.log(`PASS  ${name} (${Date.now() - t0}ms)`)
   } catch (e) {
     results.push({ name, ok: false, error: e.message })
     console.log(`FAIL  ${name}: ${e.message}`)
   } finally {
+    clearTimeout(timer)
     await quitAll()
   }
 }
