@@ -1,6 +1,7 @@
 package com.marcp.directauth.events;
 
 import com.marcp.directauth.DirectAuth;
+import com.marcp.directauth.network.JailTraffic;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.protocol.game.ClientboundRemoveMobEffectPacket;
 import net.minecraft.network.protocol.game.ClientboundUpdateMobEffectPacket;
@@ -50,6 +51,8 @@ public class PlayerRestrictionHandler {
         removeAnchor(player);
         // Resincronizar HUD de efectos (limpiados al entrar en limbo)
         resyncEffectsToClient(player);
+        // Pantallas y menús de otras mods aplazados, y lo que su cliente les envió en la jaula
+        JailTraffic.release(player);
     }
 
     public static void hideEffectsFromClient(ServerPlayer player) {

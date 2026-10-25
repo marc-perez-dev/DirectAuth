@@ -7,7 +7,9 @@ import com.marcp.directauth.data.MigrationMode;
 
 import java.io.*;
 import java.nio.file.*;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 public class ModConfig {
@@ -33,6 +35,26 @@ public class ModConfig {
     // Anti-Bot Settings
     public int registrationDelay = 1; // 1 second wait before registering
     public int maxAccountsPerIP = 5;  // Max 5 accounts per IP
+
+    // --- Other mods ---
+    // Paquetes de otras mods que abren una pantalla al entrar. A un jugador sin autenticar se le
+    // entregan al autenticarse (solo el último de cada id), para que no le tapen el chat antes.
+    public List<String> deferredScreenPayloads = new ArrayList<>(List.of(
+        "neoorigins:open_origin_screen",                   // Neo Origins: elección de origen
+        "mca:open_destiny_gui_request",                    // MCA Reborn: Destiny
+        "pixelmon:starterlistpacket",                      // Pixelmon: elección de inicial
+        "dragonsurvival:open_dragon_altar",                // Dragon Survival: altar de dragón
+        "starterkit:to_client_receive_kit_data_packet"     // Starter Kit: elección de kit
+    ));
+    // Paquetes de otras mods que un jugador sin autenticar sí puede enviar. El resto se retiene
+    // hasta que se autentica (y se descarta si se desconecta antes). Solo para respuestas que una
+    // mod espera con plazo y que no hacen nada en nombre de la cuenta.
+    public List<String> heldPayloadExceptions = new ArrayList<>(List.of(
+        "starterkit:to_server_announce_mod_is_installed_packet" // Starter Kit: "tengo la mod" (5 s de plazo)
+    ));
+    // Escribe en el log los paquetes de otras mods que recibe un jugador sin autenticar, para
+    // encontrar el id de una pantalla que añadir a deferredScreenPayloads.
+    public boolean logJailPayloads = false;
 
     // --- Data Migration Settings ---
     // Mapa: Ruta de la carpeta -> Modo de migración
@@ -88,6 +110,11 @@ public class ModConfig {
             if (config == null) {
                 throw new ConfigException("Could not read " + configPath + ": the file is empty", null);
             }
+
+            // Listas puestas a null a mano: valores por defecto
+            ModConfig defaults = new ModConfig();
+            if (config.deferredScreenPayloads == null) config.deferredScreenPayloads = defaults.deferredScreenPayloads;
+            if (config.heldPayloadExceptions == null) config.heldPayloadExceptions = defaults.heldPayloadExceptions;
 
             // Asegurar que el mapa no sea nulo si viene de una config vieja
             if (config.migrationMap == null || config.migrationMap.isEmpty()) {

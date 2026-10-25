@@ -10,6 +10,9 @@
     "MixinServerGamePacketListenerImpl",
     "MixinRconConsoleSource",
     "MixinItemPhysicPackets",
+    "MixinServerCommonPacketListenerImpl",
+    "MixinConnection",
+    "MixinServerPlayerOpenMenu",
     "PlayerListAccessor"
   ],
   "injectors": {

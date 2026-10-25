@@ -839,6 +839,25 @@ const rconTest = async (cmd) => /Test passed/.test(await T.rcon(cmd))
     await T.sleep(800)
     log = await T.datestLog(NAME)
     T.assert(!log.includes('action:ghost'), `payload of a connection that left unauthenticated ran later: ${log}`)
+    await logout(b)
+
+    // heldPayloadExceptions: esos paquetes pasan aunque el jugador esté en la jaula
+    const cfgPath = path.join(T.CFG_DIR, 'DirectAuth-config.json')
+    const original = fs.readFileSync(cfgPath, 'utf8')
+    await T.setConfig({ heldPayloadExceptions: [HELLO] })
+    try {
+      await T.rcon('datest clear')
+      b = await joinOk(NAME, '127.0.0.110')
+      await T.expect(b, L.msgLoginRequest)
+      T.sendPayload(b, HELLO, 'excepted')
+      T.sendPayload(b, ACTION, 'held')
+      await T.sleep(800)
+      log = await T.datestLog(NAME)
+      T.assert(sameSet(log, ['hello:excepted']), `with ${HELLO} excepted, expected only it while jailed, got ${log}`)
+    } finally {
+      fs.writeFileSync(cfgPath, original)
+      await T.rcon('directauth reload')
+    }
   })
 
   await test('vanilla op packets from a jailed op impostor are ignored (command blocks, difficulty, structures, NBT queries, books, recipes)', async () => {
@@ -968,7 +987,8 @@ const rconTest = async (cmd) => /Test passed/.test(await T.rcon(cmd))
   await test('screens from other mods: listed payloads wait for /login (only the last one), other payloads arrive at once', async () => {
     const cfgPath = path.join(T.CFG_DIR, 'DirectAuth-config.json')
     const original = fs.readFileSync(cfgPath, 'utf8')
-    await T.setConfig({ deferredScreenPayloads: [SCREEN] })
+    await T.setConfig({ deferredScreenPayloads: [SCREEN], logJailPayloads: true })
+    const logStart = T.serverLogSize()
     try {
       const NAME = fresh('ScrMod')
       const IP = '127.0.0.112'
@@ -978,6 +998,10 @@ const rconTest = async (cmd) => /Test passed/.test(await T.rcon(cmd))
       await T.expect(b, L.msgWelcome)
       await T.sleep(800)
       T.assert(T.received(b, DATA).includes('login'), `non-screen payload was held: ${JSON.stringify(b.payloads)}`)
+      // logJailPayloads: el log dice qué recibe un jugador en la jaula y qué se aplaza
+      const logged = T.serverLogSince(logStart)
+      T.assert(logged.includes(`payload ${DATA} to unauthenticated ${NAME}`) && logged.includes(`payload ${SCREEN} to unauthenticated ${NAME} (deferred`),
+        'logJailPayloads did not log the payloads sent to the jailed player')
       await T.rcon(`datest screen ${NAME} first`)
       await T.rcon(`datest screen ${NAME} last`)
       await T.sleep(500)

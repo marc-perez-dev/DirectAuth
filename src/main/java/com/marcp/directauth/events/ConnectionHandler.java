@@ -4,6 +4,7 @@ import com.marcp.directauth.DirectAuth;
 import com.marcp.directauth.auth.AuthTasks;
 import com.marcp.directauth.auth.ConfirmationManager;
 import com.marcp.directauth.data.UserData;
+import com.marcp.directauth.network.JailTraffic;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.server.network.ServerGamePacketListenerImpl;
@@ -46,6 +47,7 @@ public class ConnectionHandler {
         DirectAuth.getLoginManager().shutdown();
         PlayerRestrictionHandler.clearAnchors();
         ConfirmationManager.clear();
+        JailTraffic.clear();
     }
 
     @SubscribeEvent
@@ -111,21 +113,31 @@ public class ConnectionHandler {
             // Si una entrada anterior sin login (p. ej. alguien con su nombre desde otra IP) lo
             // movió al spawn, su posición real quedó guardada: devolverlo a ella.
             DirectAuth.getPositionManager().restorePosition(player);
+            // Lo que otras mods le enviaron (o él a ellas) en este mismo evento de entrada, antes
+            // de que DirectAuth lo autenticara
+            JailTraffic.release(player);
         }
 
         // Si NO está autenticado (usuario nuevo o login pendiente), ocultar coordenadas
         if (!isAuthenticated) {
+            // Un jugador que nunca ha jugado no tiene una posición que ocultar: se queda donde lo
+            // haya puesto el juego o una mod que lo mueve en la primera entrada (a otra dimensión, a
+            // una isla...), corra antes o después que DirectAuth.
+            boolean playedBefore = hasPlayedBefore(player);
+
             // [CAMBIO CLAVE] Solo guardar posición si está vivo y con salud. Un jugador que nunca
             // ha jugado ya está en el spawn: no hace falta guardarle nada (y así los bots con
             // nombres aleatorios no hacen crecer el fichero de posiciones).
-            if (!player.isDeadOrDying() && player.getHealth() > 0 && hasPlayedBefore(player)) {
+            if (!player.isDeadOrDying() && player.getHealth() > 0 && playedBefore) {
                 DirectAuth.getPositionManager().savePosition(player);
             }
 
-            // Teletransportar al Spawn del Overworld
-            ServerLevel overworld = player.getServer().overworld();
-            BlockPos spawnPos = overworld.getSharedSpawnPos();
-            player.teleportTo(overworld, spawnPos.getX() + 0.5, spawnPos.getY(), spawnPos.getZ() + 0.5, 0, 0);
+            // Teletransportar al Spawn del Overworld para no revelar dónde estaba
+            if (playedBefore) {
+                ServerLevel overworld = player.getServer().overworld();
+                BlockPos spawnPos = overworld.getSharedSpawnPos();
+                player.teleportTo(overworld, spawnPos.getX() + 0.5, spawnPos.getY(), spawnPos.getZ() + 0.5, 0, 0);
+            }
 
             // Si el jugador ya tickeó antes de llegar aquí (fallback asíncrono), su ancla apunta
             // a la posición original: la descartamos para que se re-ancle en el spawn.
@@ -162,6 +174,8 @@ public class ConnectionHandler {
 
             PlayerRestrictionHandler.removeAnchor(player);
             ConfirmationManager.cancel(player);
+            // Lo retenido de una conexión que no llegó a autenticarse no se procesa nunca
+            JailTraffic.discard(player);
             // Nota: No borramos la posición guardada aquí. Se mantiene hasta que se autentique correctamente.
         }
     }

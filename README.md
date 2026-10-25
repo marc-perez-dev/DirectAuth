@@ -20,6 +20,7 @@ All database operations and password hashing run asynchronously, so the main ser
 * **Session Grace Period**: If a player disconnects and reconnects within the configured grace period, they stay authenticated without logging in again.
 * **Anti-Bot Protection**: Configurable registration delay and a maximum number of accounts per IP address.
 * **Strict Restrictions**: Unauthenticated players cannot move, chat, interact with blocks/entities, drop, move or pick up items (inventory and container clicks are blocked), attack, gain XP, or regenerate health. If they respawn, they appear at world spawn instead of the account's bed or respawn anchor. Other mods' automation (`FakePlayer`s such as deployers or miners) is never restricted.
+* **Safe with Other Mods**: Until a player logs in, whatever their client sends to other mods waits and only runs once they authenticate (so someone using another player's name cannot release their Pokémon or pick their origin), op-only packets such as command block edits are ignored, and screens other mods open at first join (origin, Destiny, starter, race selection...) show up after `/register` or `/login` instead of covering the chat.
 * **Smart Data Migration**: When a player switches from offline to online mode their UUID changes, so the mod automatically migrates their data to the new UUID (see below).
 * **Localization**: Ships with English (`en`) and Spanish (`es`); fully customizable message strings.
 
@@ -95,6 +96,11 @@ Edit `world/serverconfig/DirectAuth-config.json` to customize:
   }
   ```
 
+* **Other mods**: see [Compatibility with other mods](#compatibility-with-other-mods).
+    * `deferredScreenPayloads` — packets of other mods that open a screen at first join. An unauthenticated player gets them after logging in.
+    * `heldPayloadExceptions` — packets an unauthenticated player's client may still send to other mods. Everything else waits until they log in.
+    * `logJailPayloads` — `true` logs every packet of other mods that unauthenticated players receive, to find the one that opens a mod's screen.
+
 Message strings can be edited in the `DirectAuth-lang-*.json` files.
 
 If the config file contains invalid JSON, DirectAuth logs an error and keeps running with the previous settings (or the defaults on startup) without overwriting your file; `/directauth reload` reports the failure.
@@ -114,6 +120,25 @@ A: The server administrator likely hadn't added that mod's data folder to `migra
 * **Upgrades**: When a new version changes the database, DirectAuth first saves a copy of it as `world/serverconfig/directauth-backup-<date>.db`; no manual backup is needed. Passwords stay in the format older versions read, so going back to 1.1 or 1.2 only takes swapping the jar.
 * **Session Management**: Sessions are validated against the internal database (and Mojang's session servers for online users).
 * **Protection**: The login listener is injected at high priority to prevent unauthorized packet processing.
+
+## Compatibility with other mods
+
+Until a player logs in, DirectAuth keeps them away from other mods:
+
+* **What their client sends to other mods** waits and runs once they log in; if they disconnect first, it never runs. Only the last packet of each kind is kept. This keeps someone who joins with another player's name from acting for that account, and one-time requests still work after login (Simple Voice Chat connects as soon as the player logs in).
+* **Op-only vanilla packets** (command blocks, structure blocks, difficulty, NBT queries, book editing, recipe placing, menu buttons) are ignored, even for an op's name.
+* **Screens other mods open when a player joins** are shown after `/register` or `/login`, so they do not cover the chat. Built in: Neo Origins, MCA Reborn (Destiny), Pixelmon, Dragon Survival and Starter Kit's kit choice. Menus the server opens (Tensura's race selection) also wait.
+* **First-join teleports** of other mods are kept: a player who has never played stays where the game or the mod put them, whether the mod moves them before or after DirectAuth sees them join.
+
+If another mod opens a screen at first join that hides the chat:
+
+1. Set `logJailPayloads` to `true` and run `/directauth reload`.
+2. Join with a new account. The server log lists the packets the player received before logging in, for example `payload examplemod:open_screen to unauthenticated Steve`.
+3. Add that id to `deferredScreenPayloads`, set `logJailPayloads` back to `false` and reload.
+
+Screens that only exist on the client (for example Welcome Screen) never reach the server. They usually close with Esc; if not, raise `loginTimeout`.
+
+These mods are tested with a real client before each release: Neo Origins, MCA Reborn, Pixelmon, Tensura: Reincarnated, Dragon Survival, Cobblemon, Vampirism, Werewolves, Epic Fight, Simple Voice Chat, The Aether, Skyblock Builder, Welcome Screen, Starter Kit and Female Gender.
 
 ## Compatibility
 
