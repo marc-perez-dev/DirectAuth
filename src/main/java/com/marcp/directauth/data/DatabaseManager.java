@@ -35,7 +35,7 @@ public class DatabaseManager {
      * Súbela con cada cambio de esquema: al arrancar con una base de datos de una versión
      * anterior se guarda antes una copia automática (ver {@link #backupBeforeUpgrade}).
      */
-    private static final int SCHEMA_VERSION = 1;
+    private static final int SCHEMA_VERSION = 2;
     private static final DateTimeFormatter BACKUP_TIMESTAMP = DateTimeFormatter.ofPattern("yyyy-MM-dd_HH-mm-ss");
 
     private final Path dbPath;
@@ -94,7 +94,8 @@ public class DatabaseManager {
                         "isPremium INTEGER DEFAULT 0, " +
                         "onlineUUID TEXT, " +
                         "registrationIp TEXT, " + // Nueva columna
-                        "offlineUUID TEXT" +
+                        "offlineUUID TEXT, " +
+                        "playerUUID TEXT" +
                         ");");
 
                 // MIGRACIÓN PARA SERVIDORES ANTIGUOS
@@ -106,10 +107,18 @@ public class DatabaseManager {
                 } catch (SQLException ignored) {
                     // La columna ya existe, no hacemos nada.
                 }
-                // UUID offline exacta de las cuentas premium (para poder migrar de vuelta)
+                // UUID offline exacta de las cuentas premium. La usaban 1.2.x-1.3.0 para migrar
+                // los datos de vuelta; ya no se lee, pero esas versiones la esperan.
                 try {
                     stmt.execute("ALTER TABLE users ADD COLUMN offlineUUID TEXT;");
                     LOGGER.info("DirectAuth: Database updated (offlineUUID column added).");
+                } catch (SQLException ignored) {
+                    // La columna ya existe, no hacemos nada.
+                }
+                // UUID con la que juega la cuenta (ver UserData)
+                try {
+                    stmt.execute("ALTER TABLE users ADD COLUMN playerUUID TEXT;");
+                    LOGGER.info("DirectAuth: Database updated (playerUUID column added).");
                 } catch (SQLException ignored) {
                     // La columna ya existe, no hacemos nada.
                 }
@@ -219,15 +228,16 @@ public class DatabaseManager {
 
     /**
      * Cambia solo el Modo Online (sin tocar la contraseña, para no pisar un cambio concurrente).
+     * @param playerUUID UUID con la que seguirá jugando la cuenta (ver UserData).
      * @return true si la cuenta existía y se actualizó.
      */
-    public CompletableFuture<Boolean> setOnlineModeAsync(String username, boolean premium, String onlineUUID, String offlineUUID) {
+    public CompletableFuture<Boolean> setOnlineModeAsync(String username, boolean premium, String onlineUUID, String playerUUID) {
         return submit(() -> {
-            String sql = "UPDATE users SET isPremium = ?, onlineUUID = ?, offlineUUID = ? WHERE " + KEY_MATCH;
+            String sql = "UPDATE users SET isPremium = ?, onlineUUID = ?, offlineUUID = NULL, playerUUID = ? WHERE " + KEY_MATCH;
             try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
                 pstmt.setInt(1, premium ? 1 : 0);
                 pstmt.setString(2, onlineUUID);
-                pstmt.setString(3, offlineUUID);
+                pstmt.setString(3, playerUUID);
                 bindKey(pstmt, 4, username);
                 return pstmt.executeUpdate() > 0;
             }
@@ -326,7 +336,7 @@ public class DatabaseManager {
                     UserData data = new UserData(rs.getString("username"), rs.getString("passwordHash"));
                     data.setPremium(rs.getInt("isPremium") == 1);
                     data.setOnlineUUID(rs.getString("onlineUUID"));
-                    data.setOfflineUUID(rs.getString("offlineUUID"));
+                    data.setPlayerUUID(rs.getString("playerUUID"));
                     return data;
                 }
             }

@@ -2,6 +2,7 @@ package com.marcp.directauth.events;
 
 import com.marcp.directauth.DirectAuth;
 import com.marcp.directauth.auth.AuthTasks;
+import com.marcp.directauth.auth.MojangVerifiedConnection;
 import com.marcp.directauth.auth.ConfirmationManager;
 import com.marcp.directauth.data.UserData;
 import com.marcp.directauth.network.JailTraffic;
@@ -89,12 +90,12 @@ public class ConnectionHandler {
     private void processLogin(ServerPlayer player, UserData userData, boolean playedBefore) {
         boolean isAuthenticated = false;
 
-        // Caso Premium
+        // Caso Premium: Mojang tiene que haber confirmado ESTA cuenta en el login. La UUID del
+        // jugador no lo demuestra: la cuenta juega con la que ya tenía antes del Modo Online.
         if (userData != null && userData.isPremium()) {
-            String expectedUUID = userData.getOnlineUUID();
-            String actualUUID = player.getStringUUID();
+            UUID verifiedUUID = ((MojangVerifiedConnection) player.connection.getConnection()).directAuth$getMojangUUID();
 
-            if (expectedUUID != null && expectedUUID.equals(actualUUID)) {
+            if (verifiedUUID != null && verifiedUUID.toString().equalsIgnoreCase(userData.getOnlineUUID())) {
                 DirectAuth.getLoginManager().setAuthenticated(player, true);
                 player.sendSystemMessage(Component.literal(DirectAuth.getConfig().getLang().msgAutoLogin));
                 isAuthenticated = true;

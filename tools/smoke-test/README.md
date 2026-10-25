@@ -11,8 +11,11 @@ SQLite database and the world files. Bots connect from different loopback addres
 - Linux (uses the `127.0.0.0/8` loopback range, `mkfifo` and `setsid`).
 - Node.js 22.5 or newer (`node:sqlite`).
 - Ports 25565 and 25575 free on `127.0.0.1`.
-- Internet access: the premium tests query the Mojang API and session server with the real
-  account name `Notch` (lookup only, nobody logs into that account).
+- Internet access: the premium tests query the Mojang API with the real account names `Notch` and
+  `jeb_` (lookup only, nobody logs into those accounts).
+- Port 25580 free on `127.0.0.1`: `lib.js` serves a fake Mojang session server there
+  (`premium()`), and `server.sh` points the server at it (`minecraft.api.session.host`), so bots
+  without a Mojang account can join as premium players.
 - The Minecraft EULA accepted for the test server. Read https://aka.ms/MinecraftEULA, then:
   `mkdir -p runs/smoke-test && echo eula=true > runs/smoke-test/eula.txt`
 
@@ -70,7 +73,7 @@ rewrite them.
 
 | File | What it does |
 |---|---|
-| `tests.js` | Tests against a running server (registration, login, lockout, jail, respawn, sessions, admin commands, premium migration, legacy hashes, config, RCON, races, other mods' packets and menus, vanilla op packets). |
+| `tests.js` | Tests against a running server (registration, login, lockout, jail, respawn, sessions, admin commands, Online Mode, legacy hashes, config, RCON, races, other mods' packets and menus, vanilla op packets). |
 | `restart.js` | Phases that need restarts: shutdown with a `/login` in flight, positions surviving a restart, automatic database backup when upgrading an older schema, corrupt `positions.json`, legacy `DirectAuth_users.json` import, malformed config at startup, downgrade and re-upgrade, Turkish locale. |
 | `lib.js` | Helpers: bots, message expectations, RCON, SQLite, player state, test-mod payloads. |
 | `server.sh` | Starts the server like `runServer` but in `runs/smoke-test/`, without GUI, with the console read from the `console` FIFO. |
@@ -83,16 +86,14 @@ rewrite them.
 
 Some tests provoke errors on purpose; `run-all.sh` prints them at the end:
 
-- `Failed migrating ... rolling back` and `AccessDeniedException` on `stats/`: the rollback test
-  makes `stats/` read-only.
-- `Could not read ... DirectAuth-config.json`, `Unknown migration mode`, `Could not read saved
+- `Could not read ... DirectAuth-config.json`, `Could not read saved
   positions`, `Skipping malformed legacy user entry`: the corrupt-file tests.
 - With `DOWNGRADE_REF`, whatever the previous version logs about the newer database (it is
   started on purpose against data written by this version).
 
 ## Not covered
 
-- Premium auto-login with a real paid account (needs a real Mojang session).
+- Premium auto-login against Mojang's real session server (the fake one answers like it).
 - Singleplayer / integrated server.
 - Mojang API unreachable (`errMojangUnavailable`).
 - Real third-party mods (`FakePlayer` machines, real FTB Quests data; FTB files are simulated). The

@@ -6,7 +6,7 @@ Single source of truth for any AI coding agent working in this repo (Claude Code
 
 ## 1. Project Overview
 
-**DirectAuth** is a server-side Minecraft authentication mod for **NeoForge 1.21.1** (Java 21). It lets a server run in offline mode safely by forcing players to `/register` and `/login` before they can play, with optional opt-in conversion to premium (online-mode) accounts and automatic player-data migration when that conversion happens.
+**DirectAuth** is a server-side Minecraft authentication mod for **NeoForge 1.21.1** (Java 21). It lets a server run in offline mode safely by forcing players to `/register` and `/login` before they can play, with optional opt-in conversion to premium (online-mode) accounts that log in automatically through Mojang. An account keeps the UUID it plays with when it changes mode, so no player data ever moves.
 
 - **Mod ID:** `directauth`
 - **Main class:** `com.marcp.directauth.DirectAuth`
@@ -47,13 +47,13 @@ DirectAuth/
 │   ├── main/
 │   │   ├── java/com/marcp/directauth/
 │   │   │   ├── DirectAuth.java       # @Mod entry — registers handlers, exposes singletons
-│   │   │   ├── auth/                 # LoginManager, AuthTasks, AccountModeSwitch, MojangAPI, ConfirmationManager
+│   │   │   ├── auth/                 # LoginManager, AuthTasks, MojangAPI, MojangVerifiedConnection, ConfirmationManager
 │   │   │   ├── commands/             # Brigadier command classes
 │   │   │   ├── config/               # ModConfig, LangConfig (Gson JSON)
-│   │   │   ├── data/                 # DatabaseManager (SQLite), PositionManager, MigrationManager, UserData, StoredLocation
+│   │   │   ├── data/                 # DatabaseManager (SQLite), PositionManager, UserData, StoredLocation
 │   │   │   ├── events/               # ConnectionHandler, PlayerRestrictionHandler
 │   │   │   ├── network/              # JailTraffic (other mods' packets and menus while jailed), JailPackets (vanilla allowlist)
-│   │   │   └── mixin/                # login handshake, packet restrictions, respawn, effects, RCON response, PlayerListAccessor
+│   │   │   └── mixin/                # login handshake and account UUID, packet restrictions, respawn, effects, RCON response
 │   │   ├── resources/
 │   │   │   ├── META-INF/             # mods.toml is generated from templates/
 │   │   │   ├── directauth.mixins.json
@@ -87,7 +87,8 @@ DirectAuth/
 - **`LoginManager`** — central authentication state. Thread-safe (`ConcurrentHashMap`). Holds `authenticatedPlayers`, `failedLogins` + `loginAttempts` (**keyed by lowercased account name + IP**, not UUID: they survive reconnects and cover case variants, but a stranger on another IP cannot lock the owner out; failures count within max(15 min, `loginLockoutSeconds`), the cooldown entry expires after `loginCooldownMs`; `clearFailedLogins(name)` lifts a lockout), `connectionTimes` (login timeout), `preLoginCache` (mixin-populated; `NULL_MARKER` = "not registered"; entries expire after 10 min), `graceSessions` (IP-locked re-login, invalidated per account with `invalidateSessions(name)`), `pendingOperations` (one async password operation per player). Runs a scheduler for cleanup at `sessionCleanupInterval` minutes and a 2-thread hash pool.
 - **Password hashing is PBKDF2WithHmacSHA256**, 100k iterations, 256-bit key, stored as `salt:hash` (Base64) — **the format 1.1/1.2 read (they assume 100k), so downgrading keeps logins working. Don't change it** (raising iterations needs a self-describing format and breaks downgrades). `verifyPassword` also accepts 10k `salt:hash` hashes from 1.0.0 and `iterations:salt:hash` from pre-release builds, returning `OK_NEEDS_REHASH`; `/login` then rewrites them as 100k `salt:hash`. Never hash on the server thread — use `hashPasswordAsync` / `verifyPasswordAsync`.
 - **`AuthTasks`** — `begin(player)` reserves the player's single in-flight operation; `finish(...)` brings a future back to the server thread, re-resolves the player (same connection only) and reports failures (including exceptions thrown by the callback) with `errInternal`. `onServerThread(server)` is the executor to use instead of `server`: once the server is stopping, `server.execute` would run the task inline on the DB/hash/HTTP thread, so it drops it instead. `revokeAccountAccess(...)` invalidates grace sessions and kicks **every** case variant of an account. `finish(CommandSourceStack, ...)` (admin commands) registers operations started from RCON so the RCON response waits for their result (see `MixinRconConsoleSource`).
-- **`AccountModeSwitch`** — shared premium/offline conversion (used by `/online` and `/directauth online`): saves the player, runs `MigrationManager` and **kicks in the same tick** (no window to keep playing on moved files), then updates only the mode columns (`setOnlineModeAsync`, never the password) and rolls the migration back if that write fails. Converting to premium stores the exact `offlineUUID` so the way back lands on the right file; `disableWhileOffline` uses it when the player is not connected.
+- **Online Mode keeps the account's UUID.** `/online` and `/directauth online` only write the mode columns (`setOnlineModeAsync`, never the password), and the player stays connected. Enabling stores the UUID the player is playing with as `playerUUID`; `MixinServerLoginPacketListenerImpl` then gives every login of the account that UUID, also the Mojang-verified ones (with the Mojang skin). **Never move player files between UUIDs**: most mods keep per-player data in memory, write it back under the old UUID and treat the new UUID as a new player (Starter Kit replaced a whole inventory with its kit, FTB Quests/Teams started over). Accounts made premium before 1.3.1 had their data migrated to the Mojang UUID, and keep that UUID (`playerUUID` = `onlineUUID` once switched back to offline).
+- **`MojangVerifiedConnection`** — implemented by `Connection` (`MixinConnection`): the Mojang UUID the session server confirmed during the login of that connection. `ConnectionHandler` auto-authenticates a premium account only if it equals `onlineUUID` — the player's UUID proves nothing, since the account plays with its own.
 - **`MojangAPI`** — non-blocking UUID lookup (`HttpClient.sendAsync`, 5s connect / 10s request timeout) against `api.mojang.com/users/profiles/minecraft/{name}`. Only names matching `[A-Za-z0-9_]{3,16}` are ever sent (offline names may contain `#`, `?`, `/`… which would change the URL), and the returned profile name must match. Completes with `null` if the account does not exist and **exceptionally** if Mojang is unreachable. Callbacks must be marshalled back to the main thread.
 - **`ConfirmationManager`** — pending-action store (30s TTL, `Consumer<ServerPlayer>`) used by `/changepassword` and `/unregister`, drained by `/directauth confirm`; cleared on logout and server stop.
 
@@ -98,12 +99,12 @@ All Brigadier-based. Registered through `RegisterCommandsEvent` in `DirectAuth`.
 |---|---|---|---|
 | `/register <password>` | 1 | no | Enforces `registrationDelay`, `maxAccountsPerIP`, password length bounds. Auto-authenticates on success. |
 | `/login <password>` | 1 | no | Enforces `loginCooldownMs`, `maxLoginAttempts` / `loginLockoutSeconds` (per account + IP). Restores position on success; upgrades legacy hashes. |
-| `/online [password]` | 0–1 | yes | Switches account to premium; verifies via `MojangAPI`; triggers `MigrationManager`. |
-| `/changepassword <old> <new>` | 2 | yes | Requires `/directauth confirm`. Keeps Online Mode (disabling it would strand the data under the online UUID). Revokes the account's other sessions and connections. |
+| `/online [password]` | 0–1 | yes | Switches account to premium; verifies via `MojangAPI`; stores the current UUID as `playerUUID`. No kick, no file moves. |
+| `/changepassword <old> <new>` | 2 | yes | Requires `/directauth confirm`. Keeps Online Mode. Revokes the account's other sessions and connections. |
 | `/unregister <password>` | 1 | yes | Requires `/directauth confirm`. Kicks player after deletion. |
 | `/logout` | 0 | yes | Invalidates grace session and kicks. |
 | `/directauth confirm` | 0 | varies | Drains `ConfirmationManager`. |
-| `/directauth online <user> <bool>` | 2 | **op** | Admin: toggle Online Mode via `AccountModeSwitch` (Mojang lookup + data migration in either direction). Enabling needs the target online **and authenticated**; disabling works offline when `offlineUUID` is known. Kicks the target. |
+| `/directauth online <user> <bool>` | 2 | **op** | Admin: toggle Online Mode (Mojang lookup when enabling). Enabling needs the target online **and authenticated** unless the account already has a `playerUUID` (its exact-case offline UUID is unknown otherwise); disabling always works. Nobody is kicked. |
 | `/directauth resetpass <user> <newpw>` | 2 | **op** | Admin: force password reset; revokes all sessions/connections of the account and clears its login lockout. |
 | `/directauth unregister <user>` | 1 | **op** | Admin: force-delete account; revokes all sessions/connections of the account. |
 | `/directauth reload` | 0 | **op** | Re-reads config + language files; fails (keeping the old config) on a malformed `DirectAuth-config.json`. A malformed language file is logged and replaced by that language's built-in defaults. |
@@ -124,15 +125,14 @@ Many mods act at first join or accept client packets without knowing about authe
 - **`JailPackets`** — allowlist of vanilla serverbound packets a jailed player may send; the rest are dropped in `MixinConnection`. Some check permissions themselves (command blocks, difficulty, structure blocks, NBT queries) and an op impostor has those permissions. Interaction packets stay allowed because the jail's events cancel them *and* correct the client.
 
 ### 4.6 `mixin/`
-- **`MixinServerLoginPacketListenerImpl`** — async pre-load of `UserData` during the login handshake so neither the handshake nor `PlayerLoggedInEvent` blocks on SQLite. Phase 2 only *peeks* the cache. Exceptions from re-running vanilla `handleHello` inside the future disconnect the client instead of being swallowed.
+- **`MixinServerLoginPacketListenerImpl`** — async pre-load of `UserData` during the login handshake so neither the handshake nor `PlayerLoggedInEvent` blocks on SQLite. Phase 2 only *peeks* the cache. Exceptions from re-running vanilla `handleHello` inside the future disconnect the client instead of being swallowed. `startClientVerification` (both paths: offline on the server thread, premium on the authenticator thread) records a Mojang-confirmed UUID on the connection (`MojangVerifiedConnection`; not the singleplayer offline fallback) and swaps the profile's UUID for the account's `playerUUID` (keeping the skin properties): for premium accounts only when Mojang confirmed `onlineUUID`, for offline accounts on the offline path. Not on online-mode servers.
 - **`MixinLivingEntityEffects`** — cancels `tickEffects` for restricted players so effect durations freeze while in the jail (the client HUD is hidden/resynced by `PlayerRestrictionHandler`).
 - **`MixinServerPlayerRespawn`** — makes `findRespawnPositionAndUseSpawnBlock` return world spawn for restricted players, so respawning neither reveals the account's bed/anchor nor consumes an anchor charge. After `/login`, `LoginCommand` calls the same vanilla method (now unrestricted) so anchor charges and invalid spawn points follow vanilla rules.
 - **`MixinServerGamePacketListenerImpl`** — cancels drop actions, offhand swaps (F), pick-item (middle click), container clicks and creative-slot packets for restricted players (injected *after* `PacketUtils.ensureRunningOnSameThread`, i.e. on the server thread) and resyncs the client inventory.
 - **`MixinItemPhysicPackets`** — `@Pseudo` compat mixin (`remap = false`, `require = 0`, no-op without the mod) on ItemPhysic's `DropPacket` / `PickupPacket#executeServer`: with `throw.enabled` the client sends Q as a CreativeCore packet instead of `ServerboundPlayerActionPacket`, which drops the item without passing through `handlePlayerAction`. Cancels both for restricted players (resyncs the inventory, `msgNoDrop` on drop). CreativeCore runs them on the server thread (`enqueueWork`).
 - **`MixinRconConsoleSource`** — vanilla reads the RCON response as soon as the command returns, before async admin commands finish. Before `getCommandResponse()` the RCON thread (never the server thread) waits, up to 30 s, for the operations registered by `AuthTasks.finish`; `prepareForCommand()` forgets operations of previous commands. Admin commands must go through `AuthTasks.finish(CommandSourceStack, ...)` for RCON to see their output.
-- **`PlayerListAccessor`** — invoker for the protected `PlayerList.save()` used by `MigrationManager` to flush dirty player files before renaming on premium conversion.
 - **`MixinServerCommonPacketListenerImpl`** — `handleCustomPayload`: holds mod payloads from jailed players just before `NetworkRegistry.handleModdedPayload` (network thread). `send`: defers screen payloads after NeoForge's `checkPacket`. Both via `JailTraffic`.
-- **`MixinConnection`** — `genericsFtw` (every received packet, network thread): drops vanilla packets of jailed players that `JailPackets` does not allow.
+- **`MixinConnection`** — `genericsFtw` (every received packet, network thread): drops vanilla packets of jailed players that `JailPackets` does not allow. Also implements `MojangVerifiedConnection`.
 - **`MixinServerPlayerOpenMenu`** — defers `openMenu(MenuProvider, Consumer)` (the vanilla overload delegates to it) for jailed players via `JailTraffic`.
 
 ### 4.7 `data/`
@@ -140,17 +140,12 @@ Many mods act at first join or accept client packets without knowing about authe
   ```sql
   users(username TEXT PRIMARY KEY, passwordHash TEXT NOT NULL,
         isPremium INTEGER DEFAULT 0, onlineUUID TEXT, registrationIp TEXT,
-        offlineUUID TEXT)
+        offlineUUID TEXT, playerUUID TEXT)
   ```
   Keys are lowercased with `Locale.ROOT`; lookups use `username IN (?, ?)` to also match rows written by older versions with the system locale (e.g. Turkish dotless `ı`).
   All CRUD is `*Async` returning `CompletableFuture` (SQL errors complete the future exceptionally). On startup, if `DirectAuth_users.json` exists, it is imported in one transaction and renamed to `DirectAuth_users.json.MIGRATED` **only after a successful commit**.
-- **`UserData`** — POJO mirror of the table row. `username` is always lowercased.
+- **`UserData`** — POJO mirror of the table row. `username` is always lowercased. `playerUUID` is the UUID the account plays with (null = whatever the login gives: the offline UUID of the name typed, or the Mojang UUID for accounts made premium before 1.3.1). `offlineUUID` is only written by 1.2.x–1.3.0 (they migrated data back to it) and is cleared on every mode change.
 - **`PositionManager`** — JSON store of `UUID → StoredLocation` (dimension, x/y/z, yaw/pitch, health, food, saturation, fire ticks). Populated on join, drained on successful login. Written atomically (temp file + move) on its own thread from a snapshot, flushed on stop; a corrupt file is moved aside to `*.corrupt-<ts>` instead of crashing startup. Players who have never played (zero play time) are not stored — they are at spawn anyway.
-- **`MigrationManager` / `MigrationMode`** — moves a player's data from one UUID to another (offline → online on premium conversion, or back when an admin disables it). Every step is journaled: on any failure it rolls back what it already did and throws, and the returned `Migration` can be rolled back later. Strategies:
-  - `RENAME` — rename a single file (vanilla `playerdata`, `stats`, `advancements`, `skinrestorer`).
-  - `DIRECTORY` — rename a UUID-named directory (death-tracker mods).
-  - `TEXT_REPLACE` — rename and bulk-replace UUID strings (both dashed and undashed) inside the file (FTB Quests). Read/written as ISO-8859-1 so any encoding round-trips byte-exactly.
-  Backs up any destination that already exists. Mapping is in `ModConfig.migrationMap`.
 
 ---
 
@@ -167,10 +162,9 @@ Gson, pretty-printed. Loaded once on `ServerStartedEvent`; missing fields are fi
 | Login flood | `maxLoginAttempts` (5), `loginCooldownMs` (3000), `loginLockoutSeconds` (300), `loginTimeout` (60s) |
 | Anti-bot | `registrationDelay` (1s), `maxAccountsPerIP` (5) |
 | Other mods | `deferredScreenPayloads` (Neo Origins, MCA, Pixelmon, Dragon Survival and Starter Kit screen payloads), `heldPayloadExceptions` (Starter Kit's timed reply), `logJailPayloads` (false; logs the payload ids jailed players receive, to find a new mod's screen), `otherModsDefaultsVersion`. Built-in ids live in `ModConfig.DEFAULT_SCREEN_PAYLOADS` / `DEFAULT_HELD_EXCEPTIONS` with the version that added them; bump `OTHER_MODS_DEFAULTS` when adding one so existing configs get it on load (ids an admin removed later don't come back). |
-| Migration | `migrationMap` — directory → `MigrationMode` |
 
 ### 5.2 `LangConfig` (`world/serverconfig/DirectAuth-lang-<code>.json`)
-Not in `assets/<modid>/lang/`. Messages are flat string fields on `LangConfig` (≈70 keys: `msgWelcome`, `errWrongPassword`, `msgAuthReminder`, `msgPremiumSuccess`, etc.). Resolved via `DirectAuth.getConfig().getLang().<field>`. Placeholders use `String.format` (`%d`, `%s`). Color codes use Minecraft `§` sequences.
+Not in `assets/<modid>/lang/`. Messages are flat string fields on `LangConfig` (≈70 keys: `msgWelcome`, `errWrongPassword`, `msgAuthReminder`, `msgPremiumEnabled`, etc.). Resolved via `DirectAuth.getConfig().getLang().<field>`. Placeholders use `String.format` (`%d`, `%s`). Color codes use Minecraft `§` sequences.
 
 Both `en` and `es` files are written on startup; the active one is selected by `ModConfig.language`. To add a language, add `LangConfig.load(dir.resolve("DirectAuth-lang-<code>.json"), "<code>")` in `ModConfig#load` and supply translations in `LangConfig` static blocks.
 
@@ -202,7 +196,7 @@ All commands from repo root. Java 21 must be on `PATH` or via a Gradle toolchain
 
 - Mod metadata is **generated**: edit `src/main/templates/META-INF/neoforge.mods.toml`, not `src/main/resources/META-INF/neoforge.mods.toml`. The `generateModMetadata` task expands `${mod_id}`, `${mod_version}`, `${neo_version}`, etc. from `gradle.properties` and runs on IDE sync.
 - No unit tests, no Checkstyle/Spotless, no pre-commit hooks. The only CI is `.github/workflows/build.yml` running `./gradlew build` on Ubuntu.
-- End-to-end smoke tests live in `tools/smoke-test/` (Linux, Node ≥ 22.5): `cd tools/smoke-test && npm ci && ./run-all.sh` builds the mod, runs the dev server in `runs/smoke-test/` (needs `eula=true` there) and drives it with Mineflayer bots, RCON and SQLite checks (~4 min, exit code ≠ 0 on failure). Run it after changing the auth flow, restrictions, migration or admin commands, and add a test for new behavior. Not part of CI.
+- End-to-end smoke tests live in `tools/smoke-test/` (Linux, Node ≥ 22.5): `cd tools/smoke-test && npm ci && ./run-all.sh` builds the mod, runs the dev server in `runs/smoke-test/` (needs `eula=true` there) and drives it with Mineflayer bots, RCON and SQLite checks (~4 min, exit code ≠ 0 on failure). Run it after changing the auth flow, restrictions, Online Mode or admin commands, and add a test for new behavior. Not part of CI.
 - The smoke-test server is the `smokeServer` run: `runServer` plus the test mod in `src/testmod/` (source set `testmod`), which stands in for other mods (optional payloads both ways, a server-opened menu, first-join teleports, `/datest` commands). `runServer`, `runClient` and the jar only contain DirectAuth. CI's `gradlew build` does not compile the test mod; `run-all.sh` does (`testmodClasses`).
 - Tests with real third-party mods live in `tools/mod-tests/` (Linux, `xvfb-run`, ~6 GB RAM): `cd tools/mod-tests && node run.js [scenario...]` runs a NeoForge dev server with DirectAuth and the mods of each scenario, and a real NeoForge client under Xvfb driven by the `directauth_modtests` harness (separate Gradle build, newer NeoForge, mods pinned with sha512 in `mods.json`). One scenario per mod: screens at first join, packets an impostor could send, first-join teleports. Run it before a release and after changing anything in `network/` or the jail. Not part of CI.
 - Working dir for runs is `run/`. Logs and the dev world live there.
@@ -229,8 +223,8 @@ All commands from repo root. Java 21 must be on `PATH` or via a Gradle toolchain
 ### Anti-bot expectations
 When changing registration / login flow, preserve all of: `registrationDelay`, `maxAccountsPerIP` (checked atomically with the INSERT in `DatabaseManager#registerUserAsync`), grace-session IP binding, login cooldown, per-account max-attempts lockout (must not reset on reconnect), anchored-position enforcement, the `loginTimeout` kick, and the `network/` jail (held mod payloads, vanilla allowlist, deferred screens and menus). These are the security surface — regressions here are silent and dangerous.
 
-### Premium migration
-`/online` triggers `MigrationManager`. Adding support for a new mod's player-data folder = adding an entry to the default `migrationMap` in `ModConfig` plus, if the mod stores UUID strings inside files (like FTB Quests), use `TEXT_REPLACE`. Always backs up existing destinations — don't shortcut this.
+### Online Mode and UUIDs
+An account's UUID never changes with its mode (see §4.2). Don't reintroduce moving player files between UUIDs: mods with data in memory overwrite them, and every mod would need its own migration rules. Changing *how* a login gets the account's UUID belongs in `MixinServerLoginPacketListenerImpl`. The smoke test logs bots in as premium through a fake session server (`premium()` in `tools/smoke-test/lib.js`).
 
 ### Things that look like bugs but aren't
 - The `assets/examplemod/lang/en_us.json` placeholder file is leftover from the NeoForge mod template; real strings live in `LangConfig`.
@@ -242,7 +236,7 @@ When changing registration / login flow, preserve all of: `registrationDelay`, `
 
 - **Adding a command** → new class in `commands/`, register it from `DirectAuth#registerCommands` (called by `RegisterCommandsEvent`).
 - **Adding a config field** → add field + default in `ModConfig`, the loader rewrites the JSON automatically on next start.
-- **Adding a message** → add field in `LangConfig` with both English and Spanish defaults; reference via `getConfig().getLang().<field>`.
+- **Adding a message** → add field in `LangConfig` with both English and Spanish defaults; reference via `getConfig().getLang().<field>`. Existing language files keep the old text of a key, so when a message's meaning changes, rename its key.
 - **Adding a persistent column** → migrate the SQLite schema in `DatabaseManager#initDatabase` (ALTER TABLE with a try/catch on `SQLITE_ERROR` is the existing pattern), **bump `SCHEMA_VERSION`** so existing databases are backed up automatically before the change, and add the field to `UserData`. Keep the change readable by older versions (they ignore extra columns) and check it with `DOWNGRADE_REF=<previous release> ./run-all.sh` in `tools/smoke-test/`.
 - **Adding a restriction** → add a `@SubscribeEvent` method in `PlayerRestrictionHandler` and gate it on `PlayerRestrictionHandler#isRestricted` (which already excludes `FakePlayer`s). Add a check to the jail test in `tools/smoke-test/tests.js`, with a positive control after `/login` so the test cannot pass by accident.
 

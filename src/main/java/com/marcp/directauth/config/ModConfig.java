@@ -3,7 +3,6 @@ package com.marcp.directauth.config;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonParseException;
-import com.marcp.directauth.data.MigrationMode;
 
 import java.io.*;
 import java.nio.file.*;
@@ -65,37 +64,10 @@ public class ModConfig {
     // Hasta qué versión de los valores por defecto de las dos listas anteriores se han aplicado
     public int otherModsDefaultsVersion = OTHER_MODS_DEFAULTS;
 
-    // --- Data Migration Settings ---
-    // Mapa: Ruta de la carpeta -> Modo de migración
-    public Map<String, MigrationMode> migrationMap = new LinkedHashMap<>();
-    
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
     
     // Runtime reference to the loaded language config
     private transient LangConfig langConfig;
-
-    public ModConfig() {
-        setDefaults();
-    }
-
-    private void setDefaults() {
-        // Vanilla Data
-        migrationMap.put("playerdata", MigrationMode.RENAME);
-        migrationMap.put("stats", MigrationMode.RENAME);
-        migrationMap.put("advancements", MigrationMode.RENAME);
-
-        // Mod Support - Defaults seguros
-        
-        // Sistema de tumbas (Carpeta con UUID)
-        migrationMap.put("deaths", MigrationMode.DIRECTORY);
-        
-        // FTB Quests (Archivo .snbt con UUID, contenido interno SIN guiones)
-        // Nota: A veces está en 'ftbquests/player_data', pero cubrimos la raíz por si acaso
-        migrationMap.put("ftbquests", MigrationMode.TEXT_REPLACE);
-        
-        // SkinRestorer (JSON simple, solo importa el nombre del archivo)
-        migrationMap.put("skinrestorer", MigrationMode.RENAME);
-    }
 
     /** Thrown when the config file exists but cannot be read or parsed. */
     public static class ConfigException extends RuntimeException {
@@ -131,23 +103,7 @@ public class ModConfig {
                 config.otherModsDefaultsVersion = OTHER_MODS_DEFAULTS;
             }
 
-            // Asegurar que el mapa no sea nulo si viene de una config vieja
-            if (config.migrationMap == null || config.migrationMap.isEmpty()) {
-                config.migrationMap = new LinkedHashMap<>();
-                config.setDefaults();
-            }
-            // Un modo desconocido (typo en el JSON) llega como null: se ignora esa entrada, pero NO
-            // se reescribe el fichero, para que el admin pueda corregirla en vez de perderla
-            java.util.List<String> invalidModes = new java.util.ArrayList<>();
-            config.migrationMap.forEach((folder, mode) -> { if (mode == null) invalidModes.add(folder); });
-            if (invalidModes.isEmpty()) {
-                config.save(configPath); // Guardar para actualizar campos nuevos
-            } else {
-                invalidModes.forEach(config.migrationMap::remove);
-                com.marcp.directauth.DirectAuth.LOGGER.warn(
-                    "DirectAuth: Unknown migration mode for {} in {} (valid: RENAME, DIRECTORY, TEXT_REPLACE). Those folders will NOT be migrated until it is fixed; the file was not rewritten.",
-                    invalidModes, configPath.getFileName());
-            }
+            config.save(configPath); // Guardar para actualizar campos nuevos (y quitar los que ya no existen)
         } else {
             config = new ModConfig();
             config.save(configPath);

@@ -12,8 +12,7 @@
     "MixinItemPhysicPackets",
     "MixinServerCommonPacketListenerImpl",
     "MixinConnection",
-    "MixinServerPlayerOpenMenu",
-    "PlayerListAccessor"
+    "MixinServerPlayerOpenMenu"
   ],
   "injectors": {
     "defaultRequire": 1

@@ -24,10 +24,12 @@ if ! grep -q '^eula=true' "$GAME/eula.txt" 2>/dev/null; then
 fi
 cp "$HERE/server.properties" "$GAME/server.properties"
 
-# Mismo comando que el script de ModDevGradle, pero en runs/smoke-test, sin GUI y con una
+# Mismo comando que el script de ModDevGradle, pero en runs/smoke-test, sin GUI, con una
 # propiedad marcadora para encontrar el proceso (pgrep) sin confundirlo con otro runServer/runClient
+# y con el servidor de sesión falso de lib.js (premium()) en lugar del de Mojang (authlib necesita
+# las dos propiedades; la de servicios sigue apuntando a Mojang)
 cmd=$(sed -e "s|cd '$SRC/run'|cd '$GAME'|" \
-          -e "s|exec '\([^']*/bin/java\)'|exec '\1' '-Ddirectauth.smoketest=true'|" \
+          -e "s|exec '\([^']*/bin/java\)'|exec '\1' '-Ddirectauth.smoketest=true' '-Dminecraft.api.session.host=http://127.0.0.1:25580' '-Dminecraft.api.services.host=https://api.minecraftservices.com'|" \
           -e "s|RunProgramArgs.txt')\$|RunProgramArgs.txt' --nogui)|" "$LAUNCH")
 if [[ "$cmd" != *"cd '$GAME'"* || "$cmd" != *"directauth.smoketest"* || "$cmd" != *"--nogui"* ]]; then
   echo "Unexpected format in $LAUNCH; update server.sh"

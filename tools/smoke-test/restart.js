@@ -90,7 +90,7 @@ async function register (name, ip) {
       // Copia automática al actualizar una base de datos de una versión anterior
       const backups = T.dbBackups()
       T.assert(backups.length === 1, `expected one automatic backup, got ${backups}`)
-      T.assert(T.schemaVersion() === 1, `schema not upgraded: ${T.schemaVersion()}`)
+      T.assert(T.schemaVersion() === 2, `schema not upgraded: ${T.schemaVersion()}`)
       const { DatabaseSync } = require('node:sqlite')
       const copy = new DatabaseSync(path.join(T.CFG_DIR, backups[0]), { readOnly: true })
       const copied = copy.prepare('SELECT COUNT(*) AS c FROM users').get().c
@@ -131,7 +131,7 @@ async function register (name, ip) {
     })
   } else if (phase === 're-upgrade') {
     await T.test('re-upgrade: back on this version, no new backup and logins still work', async () => {
-      T.assert(T.schemaVersion() === 1, `schema ${T.schemaVersion()}`)
+      T.assert(T.schemaVersion() === 2, `schema ${T.schemaVersion()}`)
       T.assert(T.dbBackups().length === 1, `backups: ${T.dbBackups()}`)
       const b = await joinOk('RegA', '127.0.0.140')
       await T.expect(b, L.msgLoginRequest)

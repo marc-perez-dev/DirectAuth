@@ -2,7 +2,10 @@ package com.marcp.directauth.mixin;
 
 import com.marcp.directauth.DirectAuth;
 import com.marcp.directauth.auth.AuthTasks;
+import com.marcp.directauth.auth.MojangVerifiedConnection;
 import com.marcp.directauth.data.UserData;
+import com.mojang.authlib.GameProfile;
+import net.minecraft.core.UUIDUtil;
 import net.minecraft.network.Connection;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.protocol.login.ClientboundHelloPacket;
@@ -15,7 +18,10 @@ import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
+import org.spongepowered.asm.mixin.injection.ModifyVariable;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
+
+import java.util.UUID;
 
 @Mixin(ServerLoginPacketListenerImpl.class)
 public abstract class MixinServerLoginPacketListenerImpl {
@@ -101,6 +107,52 @@ public abstract class MixinServerLoginPacketListenerImpl {
                 DirectAuth.LOGGER.error("DirectAuth: Premium handshake error: {}", e.getMessage());
             }
         }
+    }
+
+    /**
+     * Perfil con el que entra el jugador, offline o confirmado por Mojang. Se llama en el hilo del
+     * servidor (offline) o en el de autenticación (premium).
+     * <p>
+     * Una cuenta conserva su UUID al cambiar de modo ({@link UserData#getPlayerUUID()}): pasar al
+     * Modo Online solo cambia cómo se identifica el jugador. Así no hay que mover ficheros, que las
+     * mods con los datos en memoria sobrescribirían (y que no tratarían a una UUID nueva como un
+     * jugador nuevo: kits de inicio, equipos, misiones...). Se conserva la skin de Mojang.
+     */
+    @ModifyVariable(method = "startClientVerification", at = @At("HEAD"), argsOnly = true)
+    private GameProfile directAuth$accountProfile(GameProfile profile) {
+        // Mojang lo confirmó: viene de handleKey y no es el perfil offline que el singleplayer
+        // usa si la verificación falla. ConnectionHandler solo da por buena una cuenta premium así.
+        boolean fromMojang = this.state == ServerLoginPacketListenerImpl.State.AUTHENTICATING
+            && !profile.getId().equals(UUIDUtil.createOfflinePlayerUUID(profile.getName()));
+        if (fromMojang) {
+            ((MojangVerifiedConnection) this.connection).directAuth$setMojangUUID(profile.getId());
+        }
+
+        if (this.server.usesAuthentication() || profile == this.server.getSingleplayerProfile()
+                || DirectAuth.getLoginManager() == null || this.requestedUsername == null) {
+            return profile;
+        }
+        UserData data = DirectAuth.getLoginManager().peekPreLoadedData(this.requestedUsername);
+        if (data == null || data.getPlayerUUID() == null) return profile;
+        if (data.isPremium()
+                ? !fromMojang || !profile.getId().toString().equalsIgnoreCase(data.getOnlineUUID())
+                : this.state != ServerLoginPacketListenerImpl.State.HELLO) {
+            return profile; // No es su dueño: ConnectionHandler lo expulsa
+        }
+
+        UUID accountUUID;
+        try {
+            accountUUID = UUID.fromString(data.getPlayerUUID());
+        } catch (IllegalArgumentException e) {
+            // Solo si se editó la DB a mano. Entrar con otra UUID sería empezar de cero.
+            DirectAuth.LOGGER.error("DirectAuth: Invalid playerUUID '{}' for {}", data.getPlayerUUID(), data.getUsername());
+            this.disconnect(Component.literal(DirectAuth.getConfig().getLang().errInternal));
+            return profile;
+        }
+        if (accountUUID.equals(profile.getId())) return profile;
+        GameProfile accountProfile = new GameProfile(accountUUID, profile.getName());
+        accountProfile.getProperties().putAll(profile.getProperties()); // Skin
+        return accountProfile;
     }
 
     // Shadow del método handleHello para poder llamarlo recursivamente

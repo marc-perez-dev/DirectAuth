@@ -1,7 +1,6 @@
 package com.marcp.directauth.commands;
 
 import com.marcp.directauth.DirectAuth;
-import com.marcp.directauth.auth.AccountModeSwitch;
 import com.marcp.directauth.auth.AuthTasks;
 import com.marcp.directauth.auth.ConfirmationManager;
 import com.marcp.directauth.auth.MojangAPI;
@@ -165,8 +164,8 @@ public class DirectAuthCommand {
 
     /**
      * Jugador conectado Y autenticado con esta cuenta (cualquier variante de mayúsculas). Un
-     * jugador encerrado sin login, o un suplantador con otra variante del nombre, no cuenta:
-     * migrar sus datos movería la posición del spawn o unos datos que no son los de la cuenta.
+     * jugador encerrado sin login, o un suplantador con otra variante del nombre, no cuenta: su UUID
+     * no es la de los datos de la cuenta.
      */
     private static ServerPlayer authenticatedPlayerOf(CommandSourceStack source, String username) {
         for (ServerPlayer player : AuthTasks.playersOfAccount(source.getServer(), username)) {
@@ -176,16 +175,17 @@ public class DirectAuthCommand {
     }
 
     /**
-     * Activar el Modo Online requiere la UUID de Mojang y migrar los datos desde la UUID offline
-     * actual del jugador, así que el jugador tiene que estar conectado y autenticado.
+     * Activar el Modo Online requiere la UUID de Mojang y saber con qué UUID juega la cuenta, que
+     * depende de las mayúsculas exactas de su nombre: el jugador tiene que estar conectado y
+     * autenticado (salvo que la cuenta ya la tenga guardada).
      */
     private static void enableOnlineMode(CommandSourceStack source, String username, UserData userData) {
         if (userData.isPremium() && userData.getOnlineUUID() != null) {
             reportModeUpdated(source, username, true); // Ya estaba activado
             return;
         }
-        if (authenticatedPlayerOf(source, username) == null) {
-            source.sendFailure(Component.literal(LangConfig.format(DirectAuth.getConfig().getLang().errAdminPlayerMustBeOnline, username)));
+        if (userData.getPlayerUUID() == null && authenticatedPlayerOf(source, username) == null) {
+            source.sendFailure(Component.literal(LangConfig.format(DirectAuth.getConfig().getLang().errAdminEnableNeedsPlayer, username)));
             return;
         }
 
@@ -206,56 +206,36 @@ public class DirectAuthCommand {
                 source.sendFailure(Component.literal(DirectAuth.getConfig().getLang().errMojangNotFound));
                 return;
             }
-            ServerPlayer target = authenticatedPlayerOf(source, username);
-            if (target == null) { // Se desconectó mientras consultábamos a Mojang
-                source.sendFailure(Component.literal(LangConfig.format(DirectAuth.getConfig().getLang().errAdminPlayerMustBeOnline, username)));
-                return;
+            String playerUUID = userData.getPlayerUUID();
+            if (playerUUID == null) {
+                ServerPlayer target = authenticatedPlayerOf(source, username);
+                if (target == null) { // Se desconectó mientras consultábamos a Mojang
+                    source.sendFailure(Component.literal(LangConfig.format(DirectAuth.getConfig().getLang().errAdminEnableNeedsPlayer, username)));
+                    return;
+                }
+                playerUUID = target.getStringUUID();
             }
-            reportSwitch(source, username, true,
-                AccountModeSwitch.apply(target, userData, true, result.onlineUUID(), DirectAuth.getConfig().getLang().msgAdminModeChangedKick));
+            saveOnlineMode(source, username, true, result.onlineUUID(), playerUUID);
         });
     }
 
+    /**
+     * No hace falta que esté conectado: la cuenta sigue jugando con la misma UUID. Las que activaron
+     * el Modo Online antes de 1.3.1 tienen los datos bajo la UUID de Mojang, y se quedan con ella.
+     */
     private static void disableOnlineMode(CommandSourceStack source, String username, UserData userData) {
         if (!userData.isPremium()) {
             reportModeUpdated(source, username, false); // Ya estaba desactivado
             return;
         }
-
-        if (userData.getOnlineUUID() == null) {
-            // Estado inconsistente (premium sin UUID): nunca se migró nada, basta con la DB
-            AuthTasks.finish(source, DirectAuth.getDatabase().setOnlineModeAsync(username, false, null, null), updated -> {
-                if (!updated) {
-                    source.sendFailure(Component.literal(LangConfig.format(DirectAuth.getConfig().getLang().errAdminUserNotFound, username)));
-                    return;
-                }
-                reportModeUpdated(source, username, false);
-            });
-            return;
-        }
-
-        // Sus datos están bajo la UUID online: hay que migrarlos de vuelta a la offline
-        ServerPlayer target = null;
-        for (ServerPlayer player : AuthTasks.playersOfAccount(source.getServer(), username)) {
-            if (userData.getOnlineUUID().equals(player.getStringUUID())) target = player;
-        }
-        if (target != null) {
-            reportSwitch(source, username, false,
-                AccountModeSwitch.apply(target, userData, false, null, DirectAuth.getConfig().getLang().msgAdminModeChangedKick));
-        } else if (userData.getOfflineUUID() != null) {
-            // No está conectado, pero sabemos a qué UUID offline exacta volver
-            reportSwitch(source, username, false, AccountModeSwitch.disableWhileOffline(source.getServer(), userData));
-        } else {
-            // Cuenta convertida con una versión antigua: la UUID offline depende de las mayúsculas
-            // exactas de su nombre, que solo conocemos si está conectado
-            source.sendFailure(Component.literal(LangConfig.format(DirectAuth.getConfig().getLang().errAdminPlayerMustBeOnline, username)));
-        }
+        String playerUUID = userData.getPlayerUUID() != null ? userData.getPlayerUUID() : userData.getOnlineUUID();
+        saveOnlineMode(source, username, false, null, playerUUID);
     }
 
-    private static void reportSwitch(CommandSourceStack source, String username, boolean premium, CompletableFuture<Boolean> switchResult) {
-        AuthTasks.finish(source, switchResult, switched -> {
-            if (!switched) {
-                source.sendFailure(Component.literal(LangConfig.format(DirectAuth.getConfig().getLang().errAdminMigrationFailed, username)));
+    private static void saveOnlineMode(CommandSourceStack source, String username, boolean premium, String onlineUUID, String playerUUID) {
+        AuthTasks.finish(source, DirectAuth.getDatabase().setOnlineModeAsync(username, premium, onlineUUID, playerUUID), updated -> {
+            if (!updated) { // Borrada mientras tanto
+                source.sendFailure(Component.literal(LangConfig.format(DirectAuth.getConfig().getLang().errAdminUserNotFound, username)));
                 return;
             }
             reportModeUpdated(source, username, premium);

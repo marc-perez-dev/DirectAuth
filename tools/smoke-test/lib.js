@@ -1,5 +1,6 @@
 // Helpers para los smoke tests de DirectAuth: bots Mineflayer, RCON, SQLite y ficheros del mundo
 const net = require('net')
+const http = require('http')
 const fs = require('fs')
 const path = require('path')
 const mineflayer = require('mineflayer')
@@ -73,6 +74,7 @@ function join (username, ip = '127.0.0.1', { timeout = 20000, options = {}, chan
     bots.add(bot)
     bot.payloads = []
     bot.windows = []
+    bot.playerInfo = []
     // Canales de mods que el cliente dice soportar (minecraft:register), como haría un cliente
     // con la mod: sin esto NeoForge no deja que el servidor le envíe esos paquetes
     if (channels.length) {
@@ -84,6 +86,7 @@ function join (username, ip = '127.0.0.1', { timeout = 20000, options = {}, chan
       if (p.channel.startsWith('directauth_test:')) bot.payloads.push({ channel: p.channel, value: readString(p.data) })
     })
     bot._client.on('open_window', (p) => bot.windows.push(p.windowId))
+    bot._client.on('player_info', (p) => bot.playerInfo.push(p))
     bot.on('message', (m) => bot.msgs.push(strip(m.toString())))
     bot.on('kicked', (reason) => { bot.kickReason = textOf(reason) })
     bot.on('error', () => {})
@@ -188,6 +191,30 @@ async function rcon (cmd) {
 }
 async function closeRcon () { if (rconClient) await rconClient.end().catch(() => {}); rconClient = null }
 
+// --- Servidor de sesión de Mojang falso (server.sh le pasa al servidor minecraft.api.session.host) ---
+// Responde a hasJoined como Mojang para los nombres dados con premium(): así un bot sin cuenta
+// entra como premium. El resto recibe 204, como un cliente que no ha entrado con su cuenta.
+const SESSION_PORT = 25580
+const premiumProfiles = new Map()
+let sessionServer = null
+/** El próximo login de {@code name} lo confirma Mojang con esta UUID. Devuelve la skin que llevará. */
+async function premium (name, id) {
+  const textures = Buffer.from(JSON.stringify({ timestamp: Date.now(), profileId: id.replace(/-/g, ''), profileName: name, textures: {} })).toString('base64')
+  premiumProfiles.set(name.toLowerCase(), { id: id.replace(/-/g, ''), name, properties: [{ name: 'textures', value: textures }] })
+  if (!sessionServer) {
+    sessionServer = http.createServer((req, res) => {
+      const url = new URL(req.url, 'http://localhost')
+      const profile = url.pathname === '/session/minecraft/hasJoined' && premiumProfiles.get(String(url.searchParams.get('username')).toLowerCase())
+      res.writeHead(profile ? 200 : 204, { 'content-type': 'application/json' })
+      res.end(profile ? JSON.stringify(profile) : undefined)
+    })
+    await new Promise((resolve, reject) => sessionServer.once('error', reject).listen(SESSION_PORT, '127.0.0.1', resolve))
+    sessionServer.unref()
+  }
+  return textures
+}
+const notPremium = (name) => premiumProfiles.delete(name.toLowerCase())
+
 // --- SQLite (solo lectura salvo que se pida) ---
 function db (sql, params = [], { write = false } = {}) {
   const conn = new DatabaseSync(DB, { readOnly: !write })
@@ -285,5 +312,5 @@ module.exports = {
   RUN, WORLD, CFG_DIR, sleep, strip, lang, re, join, send, expect, expectNo, expectKick, expectConnected,
   quit, quitAll, rcon, closeRcon, db, user, readConfig, setConfig, offlineUUID, serverLogSince, serverLogSize,
   test, summary, assert, posOf, dimOf, countItem, near, verifiesLikeOldVersions, schemaVersion, dbBackups,
-  sendPayload, received, datestLog
+  sendPayload, received, datestLog, premium, notPremium
 }

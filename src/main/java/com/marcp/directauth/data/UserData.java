@@ -7,7 +7,10 @@ public class UserData {
     private String passwordHash; // Hash PBKDF2WithHmacSHA256 (ver LoginManager)
     private boolean isPremium; // Si es cuenta premium verificada
     private String onlineUUID; // UUID online si es premium (null si no)
-    private String offlineUUID; // UUID offline exacta desde la que se migró al activar premium (null si no se sabe)
+    // UUID con la que juega la cuenta, sea cual sea su modo (ver MixinServerLoginPacketListenerImpl).
+    // null = la que da el login: la offline de su nombre, o la de Mojang en las cuentas que
+    // activaron el Modo Online antes de 1.3.1 (entonces sus datos se migraban a esa UUID).
+    private String playerUUID;
     
     // Constructor para nuevos usuarios
     public UserData(String username, String passwordHash) {
@@ -22,10 +25,10 @@ public class UserData {
     public String getPasswordHash() { return passwordHash; }
     public boolean isPremium() { return isPremium; }
     public String getOnlineUUID() { return onlineUUID; }
-    public String getOfflineUUID() { return offlineUUID; }
+    public String getPlayerUUID() { return playerUUID; }
     
     public void setPasswordHash(String hash) { this.passwordHash = hash; }
     public void setPremium(boolean premium) { this.isPremium = premium; }
     public void setOnlineUUID(String uuid) { this.onlineUUID = uuid; }
-    public void setOfflineUUID(String uuid) { this.offlineUUID = uuid; }
+    public void setPlayerUUID(String uuid) { this.playerUUID = uuid; }
 }

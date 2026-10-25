@@ -542,7 +542,7 @@ const rconTest = async (cmd) => /Test passed/.test(await T.rcon(cmd))
   })
 
   await test('database: a fresh database gets the current schema and no backup', async () => {
-    T.assert(T.schemaVersion() === 1, `user_version ${T.schemaVersion()}`)
+    T.assert(T.schemaVersion() === 2, `user_version ${T.schemaVersion()}`)
     T.assert(T.dbBackups().length === 0, `unexpected backups: ${T.dbBackups()}`)
   })
 
@@ -551,82 +551,105 @@ const rconTest = async (cmd) => /Test passed/.test(await T.rcon(cmd))
   const OFF = T.offlineUUID('Notch')
   const nd = (u) => u.replace(/-/g, '')
 
-  await test('premium: /online migrates files (RENAME, DIRECTORY, TEXT_REPLACE) and kicks', async () => {
-    fs.mkdirSync(path.join(T.WORLD, 'ftbquests'), { recursive: true })
-    fs.mkdirSync(path.join(T.WORLD, 'deaths', OFF), { recursive: true })
-    fs.writeFileSync(path.join(T.WORLD, 'deaths', OFF, 'death1.txt'), 'x')
-    const quest = Buffer.concat([Buffer.from(`owner: "${OFF}"\nid: ${nd(OFF)}\nname: "ñandú"\n`, 'utf8'), Buffer.from([0xff, 0xfe, 0x00, 0x41])])
-    fs.writeFileSync(path.join(T.WORLD, 'ftbquests', `${OFF}.snbt`), quest)
-    fs.writeFileSync(path.join(T.WORLD, 'ftbquests', `${ON}.snbt`), 'stale')
+  // Sin ficheros que mover: no se crea nada bajo la UUID de Mojang
+  const noMojangFiles = (uuid) => ['playerdata', 'stats', 'advancements'].filter((d) => fs.readdirSync(path.join(T.WORLD, d)).some((f) => f.startsWith(uuid)))
+  // Propiedades (skin) que el cliente recibe de un jugador
+  const skinSent = (b, textures) => JSON.stringify(b.playerInfo).includes(textures)
 
+  await test('premium: /online keeps the account UUID, moves nothing and keeps the player connected', async () => {
     const b = await register('Notch', '127.0.0.40')
     await T.rcon('give Notch minecraft:diamond 7')
     await T.sleep(300)
     T.send(b, '/online')
+    await T.expect(b, L.msgOnlineModeKeepsData)
     await T.expect(b, L.msgPremiumWarning)
     T.send(b, '/online wrongpw')
     await T.expect(b, L.errWrongPasswordSimple)
     T.send(b, `/online ${PW}`)
     await T.expect(b, L.msgVerifying)
-    await T.expectKick(b, L.msgPremiumKick, 15000)
-    await T.sleep(500)
+    await T.expect(b, L.msgPremiumEnabled, 15000)
+    await T.expectConnected(b, 500)
     const u = T.user('Notch')
-    T.assert(u.isPremium === 1 && u.onlineUUID === ON && u.offlineUUID === OFF, `db: ${JSON.stringify(u)}`)
-    T.assert(exists(`playerdata/${ON}.dat`), 'playerdata not migrated')
-    T.assert(exists(`stats/${ON}.json`), 'stats not migrated')
-    T.assert(exists(`deaths/${ON}/death1.txt`) && !exists(`deaths/${OFF}`), 'deaths dir not migrated')
-    const migrated = fs.readFileSync(path.join(T.WORLD, 'ftbquests', `${ON}.snbt`))
-    const expected = Buffer.from(quest.toString('latin1').split(OFF).join(ON).split(nd(OFF)).join(nd(ON)), 'latin1')
-    T.assert(migrated.equals(expected), 'TEXT_REPLACE output not byte-exact')
-    T.assert(fs.readFileSync(path.join(T.WORLD, 'ftbquests', `${ON}.snbt.bak`), 'utf8') === 'stale', 'existing destination not backed up')
+    T.assert(u.isPremium === 1 && u.onlineUUID === ON && u.playerUUID === OFF && u.offlineUUID === null, `db: ${JSON.stringify(u)}`)
+    await T.quit(b)
+    T.assert(noMojangFiles(ON).length === 0, `files under the Mojang UUID: ${noMojangFiles(ON)}`)
   })
 
-  await test('premium: offline impostors (any case) cannot join a premium account', async () => {
+  await test('premium: a Mojang-verified join plays with the account UUID, inventory and skin', async () => {
+    const textures = await T.premium('Notch', ON)
+    const b = await joinOk('Notch', '127.0.0.41')
+    await T.expect(b, L.msgAutoLogin)
+    T.assert(b._client.uuid === OFF, `joined as ${b._client.uuid}`)
+    T.assert(await T.countItem('Notch', 'minecraft:diamond') === 7, `inventory: ${await T.countItem('Notch', 'minecraft:diamond')}`)
+    T.assert(skinSent(b, textures), 'Mojang skin not kept')
+    await T.quit(b)
+    T.assert(noMojangFiles(ON).length === 0, `files under the Mojang UUID: ${noMojangFiles(ON)}`)
+  })
+
+  await test('premium: offline impostors (any case) and other Mojang accounts cannot join', async () => {
+    T.notPremium('Notch')
     for (const name of ['Notch', 'notch']) {
       const b = await T.join(name, '127.0.0.41')
       await T.sleep(500)
       T.assert(!b.spawned, `${name} spawned into a premium account`)
     }
+    // Mojang confirma el nombre, pero con la cuenta de otro (p. ej. el nombre cambió de dueño)
+    await T.premium('Notch', '00000000-0000-4000-8000-000000000042')
+    const logAt = T.serverLogSize()
+    const other = await T.join('Notch', '127.0.0.41')
+    await T.sleep(500)
+    T.notPremium('Notch')
+    T.assert(!other.connected, 'another Mojang account stayed connected')
+    // El kick llega en el mismo tick que la entrada y el bot a veces no llega a leer el motivo
+    const reason = T.strip(L.msgPremiumError).split('\n')[0]
+    T.assert(T.serverLogSince(logAt).includes(`Notch lost connection: ${reason}`), `no "${reason}" kick in the server log`)
   })
 
-  await test('premium: admin disables online mode while offline, data comes back', async () => {
+  await test('premium: admin disables online mode while offline; the account keeps its UUID', async () => {
     await adminCmd('/directauth online Notch false', T.re(L.msgAdminPremiumUpdated), 10000)
     const u = T.user('Notch')
-    T.assert(u.isPremium === 0 && u.onlineUUID === null && u.offlineUUID === null, `db: ${JSON.stringify(u)}`)
-    T.assert(exists(`playerdata/${OFF}.dat`) && !exists(`playerdata/${ON}.dat`), 'playerdata not moved back')
-    T.assert(exists(`deaths/${OFF}/death1.txt`), 'deaths not moved back')
-    T.assert(fs.readFileSync(path.join(T.WORLD, 'ftbquests', `${OFF}.snbt`), 'latin1').includes(nd(OFF)), 'quest UUIDs not reverted')
+    T.assert(u.isPremium === 0 && u.onlineUUID === null && u.playerUUID === OFF, `db: ${JSON.stringify(u)}`)
     const b = await login('Notch', '127.0.0.42')
-    await T.sleep(300)
-    T.assert(await T.countItem('Notch', 'minecraft:diamond') === 7, `inventory lost: ${await T.countItem('Notch', 'minecraft:diamond')}`)
+    T.assert(b._client.uuid === OFF, `joined as ${b._client.uuid}`)
+    T.assert(await T.countItem('Notch', 'minecraft:diamond') === 7, `inventory: ${await T.countItem('Notch', 'minecraft:diamond')}`)
   })
 
-  await test('premium: admin enable requires the player online; works when online', async () => {
-    await adminCmd('/directauth online Notch true', T.re(L.errAdminPlayerMustBeOnline), 10000)
-    T.assert(T.user('Notch').isPremium === 0, 'enabled while offline')
-    const b = await login('Notch', '127.0.0.42')
+  await test('premium: admin enable needs the player online only if the account has no UUID yet', async () => {
+    // Notch ya tiene su UUID guardada: se puede activar sin él, y sigue conectado si lo está
     await adminCmd('/directauth online Notch true', T.re(L.msgAdminPremiumUpdated), 15000)
-    await T.expectKick(b, L.msgAdminModeChangedKick)
-    const u = T.user('Notch')
-    T.assert(u.isPremium === 1 && u.onlineUUID === ON && u.offlineUUID === OFF, `db: ${JSON.stringify(u)}`)
-    T.assert(exists(`playerdata/${ON}.dat`), 'playerdata not migrated')
-    await adminCmd('/directauth online Notch false', T.re(L.msgAdminPremiumUpdated), 10000)
-    T.assert(T.user('Notch').isPremium === 0, 'not disabled again')
+    T.assert(T.user('Notch').isPremium === 1 && T.user('Notch').playerUUID === OFF, `db: ${JSON.stringify(T.user('Notch'))}`)
+    const b = await register('jeb_', '127.0.0.44')
+    await logout(b)
+    await adminCmd('/directauth online jeb_ true', T.re(L.errAdminEnableNeedsPlayer), 10000)
+    T.assert(T.user('jeb_').isPremium === 0, 'enabled while offline')
+    const j = await login('jeb_', '127.0.0.44')
+    await adminCmd('/directauth online jeb_ true', T.re(L.msgAdminPremiumUpdated), 15000)
+    await T.expectConnected(j, 500)
+    const u = T.user('jeb_')
+    T.assert(u.isPremium === 1 && /^[0-9a-f-]{36}$/.test(u.onlineUUID) && u.playerUUID === T.offlineUUID('jeb_'), `db: ${JSON.stringify(u)}`)
+    await adminCmd('/directauth online jeb_ false', T.re(L.msgAdminPremiumUpdated), 10000)
+    await T.expectConnected(j, 300)
+    T.assert(T.user('jeb_').isPremium === 0 && T.user('jeb_').playerUUID === T.offlineUUID('jeb_'), 'not disabled again')
   })
 
-  await test('premium: failed migration is rolled back, player stays connected and offline', async () => {
-    const b = await login('Notch', '127.0.0.42')
-    fs.chmodSync(path.join(T.WORLD, 'stats'), 0o555)
-    try {
-      T.send(b, `/online ${PW}`)
-      await T.expect(b, L.errPremiumMigrationFailed, 15000)
-      await T.expectConnected(b, 500)
-      T.assert(T.user('Notch').isPremium === 0, 'db changed')
-      T.assert(exists(`playerdata/${OFF}.dat`) && !exists(`playerdata/${ON}.dat`), 'playerdata not rolled back')
-      T.send(b, 'still_here')
-      await T.expectConnected(b, 300)
-    } finally {
-      fs.chmodSync(path.join(T.WORLD, 'stats'), 0o755)
+  await test('premium: accounts converted by older versions keep the Mojang UUID in both modes', async () => {
+    // Como la dejaba 1.3.0: datos migrados a la UUID de Mojang, sin playerUUID
+    T.db("UPDATE users SET isPremium = 1, onlineUUID = ?, offlineUUID = ?, playerUUID = NULL WHERE username = 'notch'", [ON, OFF], { write: true })
+    await T.premium('Notch', ON)
+    const b = await joinOk('Notch', '127.0.0.45')
+    await T.expect(b, L.msgAutoLogin)
+    T.assert(b._client.uuid === ON, `premium join as ${b._client.uuid}`)
+    await T.rcon('give Notch minecraft:emerald 3')
+    await T.sleep(300)
+    await T.quit(b)
+    T.notPremium('Notch')
+    await adminCmd('/directauth online Notch false', T.re(L.msgAdminPremiumUpdated), 10000)
+    T.assert(T.user('Notch').playerUUID === ON, `db: ${JSON.stringify(T.user('Notch'))}`)
+    for (const name of ['Notch', 'notch']) {
+      const o = await login(name, '127.0.0.45')
+      T.assert(o._client.uuid === ON, `${name} offline join as ${o._client.uuid}`)
+      T.assert(await T.countItem(name, 'minecraft:emerald') === 3, `${name} inventory: ${await T.countItem(name, 'minecraft:emerald')}`)
+      await T.quit(o)
     }
   })
 
@@ -654,19 +677,12 @@ const rconTest = async (cmd) => /Test passed/.test(await T.rcon(cmd))
     }
   })
 
-  await test('config: unknown migration mode is ignored and the file is not rewritten', async () => {
+  await test('config: the migrationMap of older versions is dropped', async () => {
     const cfgPath = path.join(T.CFG_DIR, 'DirectAuth-config.json')
-    const good = fs.readFileSync(cfgPath, 'utf8')
-    const bad = good.replace('"TEXT_REPLACE"', '"TEXT_REPLAC"')
-    fs.writeFileSync(cfgPath, bad)
-    try {
-      const out = await T.rcon('directauth reload')
-      T.assert(T.re(L.msgConfigReloaded).test(out), `reload output: ${out}`)
-      T.assert(fs.readFileSync(cfgPath, 'utf8') === bad, 'file was rewritten')
-    } finally {
-      fs.writeFileSync(cfgPath, good)
-      await T.rcon('directauth reload')
-    }
+    fs.writeFileSync(cfgPath, JSON.stringify({ ...T.readConfig(), migrationMap: { playerdata: 'RENAME' } }, null, 2))
+    const out = await T.rcon('directauth reload')
+    T.assert(T.re(L.msgConfigReloaded).test(out), `reload output: ${out}`)
+    T.assert(!('migrationMap' in T.readConfig()), 'migrationMap still in the file')
   })
 
   // ========== Extra ==========
@@ -762,16 +778,14 @@ const rconTest = async (cmd) => /Test passed/.test(await T.rcon(cmd))
     await T.expectKick(b, L.msgAdminPasswordResetKick)
     console.log(`      resetpass over RCON answered in ${r.ms}ms`)
     r = await timed('directauth online RconUser true')
-    T.assert(T.re(L.errAdminPlayerMustBeOnline).test(r.out), `online offline player: ${JSON.stringify(r.out)}`)
+    T.assert(T.re(L.errAdminEnableNeedsPlayer).test(r.out), `online offline player: ${JSON.stringify(r.out)}`)
     r = await timed('directauth unregister RconUser')
     T.assert(T.re(L.msgAdminUnregisterSuccess).test(r.out), `unregister: ${JSON.stringify(r.out)}`)
     T.assert(!T.user('RconUser'), 'row still present')
-    // Con consulta a Mojang y migración de datos
-    const n = await login('Notch', '127.0.0.42')
+    // Con consulta a Mojang
     r = await timed('directauth online Notch true')
     T.assert(/Online Mode status updated for Notch: true/.test(r.out), `online true: ${JSON.stringify(r.out)}`)
-    await T.expectKick(n, L.msgAdminModeChangedKick)
-    console.log(`      online true (Mojang + migration) over RCON answered in ${r.ms}ms`)
+    console.log(`      online true (Mojang lookup) over RCON answered in ${r.ms}ms`)
     r = await timed('directauth online Notch false')
     T.assert(/Online Mode status updated for Notch: false/.test(r.out), `online false: ${JSON.stringify(r.out)}`)
     // Los comandos que no son de DirectAuth no esperan
