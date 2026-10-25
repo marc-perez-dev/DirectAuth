@@ -43,6 +43,14 @@ public class ModConfig {
     private static final Map<String, Integer> DEFAULT_SCREEN_PAYLOADS = new LinkedHashMap<>();
     private static final Map<String, Integer> DEFAULT_HELD_EXCEPTIONS = new LinkedHashMap<>();
     static {
+        // Forge 1.20.1: "canal#índice" en los SimpleChannel (ver JailTraffic.payloadType)
+        DEFAULT_SCREEN_PAYLOADS.put("origins:network#1", 1);                              // Origins: elección de origen
+        DEFAULT_SCREEN_PAYLOADS.put("mca:main#36", 1);                                    // MCA Reborn: Destiny
+        DEFAULT_SCREEN_PAYLOADS.put("pixelmon:main#42", 1);                               // Pixelmon: elección de inicial
+        DEFAULT_SCREEN_PAYLOADS.put("starterkit:to_client_receive_kit_data_packet", 1);   // Starter Kit: elección de kit (un canal por paquete)
+        DEFAULT_HELD_EXCEPTIONS.put("starterkit:to_server_announce_mod_is_installed_packet", 1); // Starter Kit: "tengo la mod" (5 s de plazo)
+        DEFAULT_HELD_EXCEPTIONS.put("tacz:network#30", 1);                                // TACZ: hora del cliente (sin ella el primer disparo falla)
+        DEFAULT_HELD_EXCEPTIONS.put("architectury:network#architectury:sync_ids", 1);     // Architectury: qué paquetes acepta el cliente
     }
 
     // Paquetes de otras mods que abren una pantalla al entrar. A un jugador sin autenticar se le

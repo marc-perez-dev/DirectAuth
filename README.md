@@ -104,13 +104,14 @@ Until a player logs in, DirectAuth keeps them away from other mods:
 
 * **What their client sends to other mods** waits and runs once they log in; if they disconnect first, it never runs. Only the last packet of each kind is kept. This keeps someone who joins with another player's name from acting for that account, and one-time requests still work after login (Simple Voice Chat connects as soon as the player logs in).
 * **Op-only vanilla packets** (command blocks, structure blocks, difficulty, NBT queries, book editing, recipe placing, menu buttons) are ignored, even for an op's name.
-* **Screens other mods open when a player joins** are shown after `/register` or `/login`, so they do not cover the chat. Menus the server opens also wait.
+* **Chat** is dropped as it arrives, so no mod reads it either (MCA's villager AI would otherwise answer it).
+* **Screens other mods open when a player joins** are shown after `/register` or `/login`, so they do not cover the chat. Built in: Origins, MCA Reborn (Destiny), Pixelmon and Starter Kit's kit choice. Menus the server opens also wait.
 * **First-join teleports** of other mods are kept: a player who has never played stays where the game or the mod put them, whether the mod moves them before or after DirectAuth sees them join.
 
 If another mod opens a screen at first join that hides the chat:
 
 1. Set `logJailPayloads` to `true` and run `/directauth reload`.
-2. Join with a new account. The server log lists the packets the player received before logging in, for example `payload examplemod:main#3 to unauthenticated Steve`. Most Forge mods send all their packets through one channel (`examplemod:main`); the number after `#` tells them apart.
+2. Join with a new account. The server log lists the packets the player received before logging in, for example `payload examplemod:main#3 to unauthenticated Steve`. Most Forge mods send all their packets through one channel (`examplemod:main`); the number after `#` tells them apart. Mods built on Architectury show up as `architectury:network#examplemod:open_screen`.
 3. Add that entry to `deferredScreenPayloads`, set `logJailPayloads` back to `false` and reload.
 
 Screens that only exist on the client (for example Welcome Screen) never reach the server. They usually close with Esc; if not, raise `loginTimeout`.

@@ -17,7 +17,6 @@ import org.jetbrains.annotations.Nullable;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Consumer;
@@ -35,13 +34,15 @@ import java.util.function.Consumer;
  * cada jugador tiene su cola bajo su propio candado, y {@link #release} la cierra.
  * <p>
  * En Forge una mod suele enviar todos sus mensajes por un mismo canal (SimpleChannel), con el
- * índice del mensaje en el primer byte: el tipo de un paquete es entonces {@code canal#índice}
- * (ver {@link #payloadType}).
+ * índice del mensaje al principio: el tipo de un paquete es entonces {@code canal#índice}, o
+ * {@code canal#id} si el canal lleva dentro el id del mensaje (ver {@link #payloadType}).
  */
 public final class JailTraffic {
     private static final Map<UUID, Held> HELD = new ConcurrentHashMap<>();
-    /** Canales creados como SimpleChannel (MixinSimpleChannel). */
-    private static final Set<ResourceLocation> SIMPLE_CHANNELS = ConcurrentHashMap.newKeySet();
+    /** Canales con el índice del mensaje al principio, y cuántos bytes ocupa (MixinSimpleChannel, MixinPixelmonSimpleChannel). */
+    private static final Map<ResourceLocation, Integer> INDEXED_CHANNELS = new ConcurrentHashMap<>();
+    /** Canal único de Architectury: cada mensaje empieza por su propio id (FTB Quests, FTB Teams, KubeJS...). */
+    private static final ResourceLocation ARCHITECTURY = new ResourceLocation("architectury", "network");
 
     /** extraData no es null si se abrió con NetworkHooks.openScreen (y se vuelve a abrir así). */
     private record MenuRequest(MenuProvider provider, @Nullable Consumer<FriendlyByteBuf> extraData) {}
@@ -97,19 +98,31 @@ public final class JailTraffic {
         return namespace.equals("minecraft") || namespace.equals("forge") || namespace.equals("fml");
     }
 
-    /** Lo llama MixinSimpleChannel al crearse cada SimpleChannel. */
-    public static void registerSimpleChannel(ResourceLocation channel) {
-        SIMPLE_CHANNELS.add(channel);
+    /**
+     * Lo llaman los mixins de los SimpleChannel al crearse cada canal: el de Forge escribe el índice
+     * en un byte; el de Pixelmon, en dos.
+     */
+    public static void registerIndexedChannel(ResourceLocation channel, int indexBytes) {
+        INDEXED_CHANNELS.put(channel, indexBytes);
     }
 
     /**
      * Tipo de un paquete de mod: {@code canal#índice} en un SimpleChannel (el índice con el que la
-     * mod registró el mensaje va en el primer byte), y el canal en el resto, que suelen usar un
-     * canal por tipo de paquete.
+     * mod registró el mensaje), {@code architectury:network#id} en Architectury, y el canal en el
+     * resto, que suelen usar un canal por tipo de paquete.
      */
     private static String payloadType(ResourceLocation channel, FriendlyByteBuf data) {
-        if (SIMPLE_CHANNELS.contains(channel) && data.readableBytes() > 0) {
-            return channel + "#" + data.getUnsignedByte(data.readerIndex());
+        Integer indexBytes = INDEXED_CHANNELS.get(channel);
+        if (indexBytes != null && data.readableBytes() >= indexBytes) {
+            int start = data.readerIndex();
+            return channel + "#" + (indexBytes == 2 ? data.getUnsignedShort(start) : data.getUnsignedByte(start));
+        }
+        if (channel.equals(ARCHITECTURY)) {
+            try {
+                return channel + "#" + new FriendlyByteBuf(data.duplicate()).readResourceLocation();
+            } catch (RuntimeException e) {
+                // Mal formado: lo trata la mod (o lo rechaza) como siempre; aquí cuenta como el canal
+            }
         }
         return channel.toString();
     }

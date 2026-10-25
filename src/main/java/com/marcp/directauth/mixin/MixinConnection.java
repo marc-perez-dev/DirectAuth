@@ -8,6 +8,7 @@ import net.minecraft.network.Connection;
 import net.minecraft.network.PacketSendListener;
 import net.minecraft.network.PacketListener;
 import net.minecraft.network.protocol.Packet;
+import net.minecraft.network.protocol.game.ServerboundChatPacket;
 import net.minecraft.server.network.ServerGamePacketListenerImpl;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
@@ -49,10 +50,13 @@ public abstract class MixinConnection implements MojangVerifiedConnection {
 
     @Inject(method = "genericsFtw", at = @At("HEAD"), cancellable = true)
     private static void directAuth$dropPacketWhileUnauthenticated(Packet<?> packet, PacketListener listener, CallbackInfo ci) {
-        if (listener instanceof ServerGamePacketListenerImpl game
-                && PlayerRestrictionHandler.isRestricted(game.player)
-                && !JailPackets.allowed(packet)) {
-            ci.cancel();
+        if (listener instanceof ServerGamePacketListenerImpl game && PlayerRestrictionHandler.isRestricted(game.player)) {
+            if (packet instanceof ServerboundChatPacket chat) {
+                JailPackets.dropChat(game, chat);
+                ci.cancel();
+            } else if (!JailPackets.allowed(packet)) {
+                ci.cancel();
+            }
         }
     }
 

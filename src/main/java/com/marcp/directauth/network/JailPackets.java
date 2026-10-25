@@ -1,5 +1,7 @@
 package com.marcp.directauth.network;
 
+import com.marcp.directauth.DirectAuth;
+import net.minecraft.network.chat.Component;
 import net.minecraft.network.protocol.Packet;
 import net.minecraft.network.protocol.game.ServerboundAcceptTeleportationPacket;
 import net.minecraft.network.protocol.game.ServerboundChatAckPacket;
@@ -32,6 +34,8 @@ import net.minecraft.network.protocol.game.ServerboundSetCreativeModeSlotPacket;
 import net.minecraft.network.protocol.game.ServerboundSwingPacket;
 import net.minecraft.network.protocol.game.ServerboundUseItemOnPacket;
 import net.minecraft.network.protocol.game.ServerboundUseItemPacket;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.server.network.ServerGamePacketListenerImpl;
 
 
 import java.util.Set;
@@ -55,9 +59,9 @@ public final class JailPackets {
         ServerboundClientInformationPacket.class, ServerboundResourcePackPacket.class,
         // Paquetes de mods: los retiene JailTraffic
         ServerboundCustomPayloadPacket.class,
-        // Chat y comandos (los filtra PlayerRestrictionHandler: solo /register, /login, /online)
-        ServerboundChatPacket.class, ServerboundChatCommandPacket.class,
-        ServerboundChatAckPacket.class, ServerboundChatSessionUpdatePacket.class, ServerboundCommandSuggestionPacket.class,
+        // Comandos (los filtra PlayerRestrictionHandler: solo /register, /login, /online); el chat
+        // no se procesa (ver dropChat)
+        ServerboundChatCommandPacket.class, ServerboundChatAckPacket.class, ServerboundChatSessionUpdatePacket.class, ServerboundCommandSuggestionPacket.class,
         // Movimiento (el ancla lo corrige) y estado del jugador
         ServerboundMovePlayerPacket.class, ServerboundAcceptTeleportationPacket.class, ServerboundPlayerInputPacket.class,
         ServerboundPlayerCommandPacket.class, ServerboundPlayerAbilitiesPacket.class, ServerboundMoveVehiclePacket.class,
@@ -73,6 +77,18 @@ public final class JailPackets {
     );
 
     private JailPackets() {
+    }
+
+    /**
+     * Mensaje de chat (no un comando) de un jugador en la jaula: no lo ve nadie, ni siquiera otras
+     * mods que leen el chat antes de ServerChatEvent (la IA de aldeanos de MCA lo envía a un
+     * servicio externo). Se aplica el acuse de los mensajes que el cliente ha visto, como haría
+     * vanilla al procesarlo, para que la validación del chat siga cuadrando tras /login. Hilo de red.
+     */
+    public static void dropChat(ServerGamePacketListenerImpl connection, ServerboundChatPacket chat) {
+        connection.handleChatAck(new ServerboundChatAckPacket(chat.lastSeenMessages().offset()));
+        ServerPlayer player = connection.player;
+        player.server.execute(() -> player.sendSystemMessage(Component.literal(DirectAuth.getConfig().getLang().msgUseCommands)));
     }
 
     public static boolean allowed(Packet<?> packet) {

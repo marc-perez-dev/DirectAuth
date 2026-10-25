@@ -17,7 +17,8 @@
     "MixinConnection",
     "MixinServerPlayerOpenMenu",
     "MixinNetworkHooksOpenScreen",
-    "MixinSimpleChannel"
+    "MixinSimpleChannel",
+    "MixinPixelmonSimpleChannel"
   ],
   "injectors": {
     "defaultRequire": 1

@@ -19,6 +19,6 @@ public abstract class MixinSimpleChannel {
 
     @Inject(method = "<init>(Lnet/minecraftforge/network/NetworkInstance;Ljava/util/Optional;)V", at = @At("TAIL"))
     private void directAuth$registerChannel(NetworkInstance instance, Optional<?> registryChangeNotify, CallbackInfo ci) {
-        JailTraffic.registerSimpleChannel(instance.getChannelName());
+        JailTraffic.registerIndexedChannel(instance.getChannelName(), 1);
     }
 }

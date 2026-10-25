@@ -199,6 +199,7 @@ public class PlayerRestrictionHandler {
     }
     @SubscribeEvent
     public void onChat(ServerChatEvent event) {
+        // Respaldo: el chat de un jugador en la jaula ya se descarta al llegar (JailPackets.dropChat).
         // Los comandos no pasan por aquí (van por CommandEvent), así que todo el chat se bloquea
         if (isNotAuth(event.getPlayer())) {
             event.setCanceled(true);
