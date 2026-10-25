@@ -165,16 +165,18 @@ async function expectKick (bot, pattern, timeout = 6000) {
   // Si el servidor cierra mientras el bot aún le envía paquetes (un kick justo al entrar), el
   // cierre llega como reset y Linux descarta lo recibido sin leer, el paquete del kick incluido:
   // entonces cuenta el motivo con el que el servidor lo echó, según su log
-  if (!bot.kickReason && bot.lastError?.code === 'ECONNRESET') bot.kickReason = await kickReasonInLog(bot)
+  if (!bot.kickReason && ['ECONNRESET', 'EPIPE'].includes(bot.lastError?.code)) bot.kickReason = await kickReasonInLog(bot)
   if (!rx.test(bot.kickReason || '')) throw new Error(`${bot.username}: kick reason "${bot.kickReason}" does not match ${rx} (end: ${bot.endReason}, error: ${bot.lastError})`)
   return bot.kickReason
 }
 
 async function kickReasonInLog (bot) {
   const name = bot.username.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-  const rx = new RegExp(`\\]: ${name} lost connection: ([\\s\\S]*?)(?=\\n\\[|$)`, 'g')
+  // "<nombre> lost connection: …" en juego; en el login, el GameProfile (…name=<nombre>…) y la IP
+  const rx = new RegExp(`\\]: [^\\n]*?\\b${name}\\b[^\\n]*? lost connection: ([\\s\\S]*?)(?=\\n\\[|$)`, 'g')
   for (let i = 0; i < 20; i++) {
-    const found = [...serverLogSince(bot.logOffset).matchAll(rx)].pop()
+    // Si el servidor se reinició después de entrar el bot, el log empieza de nuevo
+    const found = [...serverLogSince(bot.logOffset > serverLogSize() ? 0 : bot.logOffset).matchAll(rx)].pop()
     if (found) return found[1].trim()
     await sleep(100)
   }

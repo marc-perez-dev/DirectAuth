@@ -815,7 +815,8 @@ const rconTest = async (cmd) => /Test passed/.test(await T.rcon(cmd))
     const b = await joinOk(NAME, '127.0.0.94')
     await T.sleep(1100)
     b.chat(`/register ${PW}`)
-    b._client.socket.destroy() // cortar sin esperar respuesta
+    // Cortar sin esperar respuesta; end() envía antes lo ya escrito (destroy() podía perder el comando)
+    b._client.socket.end()
     await T.sleep(1000)
     T.assert(T.user(NAME), 'account not created')
     // Según quién gane la carrera, la primera conexión llegó o no a autenticarse (y desde su IP
@@ -835,7 +836,7 @@ const rconTest = async (cmd) => /Test passed/.test(await T.rcon(cmd))
       await T.expect(b, L.msgLoginRequest)
       await T.sleep(1100)
       b.chat(`/login ${PW}`)
-      b._client.socket.destroy()
+      b._client.socket.end()
       // Reentrar desde otra IP (sin sesión de gracia) mientras el hash está en curso
       const imp = await joinOk(NAME, '127.0.0.96')
       await T.sleep(800)
