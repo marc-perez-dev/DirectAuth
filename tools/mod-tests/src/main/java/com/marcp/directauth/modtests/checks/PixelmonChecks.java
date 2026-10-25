@@ -15,5 +15,6 @@ public final class PixelmonChecks {
     public static void add(Map<String, Function<ServerPlayer, String>> checks) {
         checks.put("pixelmon-starter-picked", player -> String.valueOf(StorageProxy.getPartyNow(player).starterPicked));
         checks.put("pixelmon-starter-options", player -> String.valueOf(StarterList.getOptions().size()));
+        checks.put("pixelmon-party-size", player -> String.valueOf(StorageProxy.getPartyNow(player).countAll()));
     }
 }

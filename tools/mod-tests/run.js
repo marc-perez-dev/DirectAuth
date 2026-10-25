@@ -141,8 +141,8 @@ function prepareDirs (scenario, mods) {
     ...(MANIFEST.scenarios[scenario].serverProperties || {})
   }
   fs.writeFileSync(path.join(server, 'server.properties'), Object.entries(props).map(([k, v]) => `${k}=${v}`).join('\n') + '\n')
-  // DIRECTAUTH_JAR=none: sin DirectAuth, para ver cómo se comporta la mod sola
-  if (process.env.DIRECTAUTH_JAR !== 'none') fs.copyFileSync(directAuthJar(), path.join(server, 'mods', path.basename(directAuthJar())))
+  const jar = directAuthJar()
+  fs.copyFileSync(jar, path.join(server, 'mods', path.basename(jar)))
 
   for (const mod of mods) {
     const src = path.join(CACHE, mod.file)

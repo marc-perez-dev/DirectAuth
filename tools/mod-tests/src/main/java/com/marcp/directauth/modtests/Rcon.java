@@ -4,7 +4,6 @@ import java.io.DataInputStream;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.net.Socket;
-import java.net.SocketTimeoutException;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
@@ -12,6 +11,8 @@ import java.nio.charset.StandardCharsets;
 /** Cliente RCON mínimo (protocolo de Source) para preparar y comprobar el servidor de pruebas. */
 public final class Rcon implements AutoCloseable {
     private static final int LOGIN = 3, COMMAND = 2;
+    /** Tamaño máximo de cada trozo de una respuesta. */
+    private static final int CHUNK = 4096;
     private final Socket socket;
     private final DataInputStream in;
     private final OutputStream out;
@@ -27,25 +28,21 @@ public final class Rcon implements AutoCloseable {
     }
 
     /**
-     * El servidor parte las respuestas en trozos de 4096 bytes con el mismo id: mientras llega un
-     * trozo lleno puede venir otro. No se puede enviar nada más detrás del comando: el servidor lee
-     * cada paquete de una vez y cierra la conexión si en esa lectura llegan dos.
+     * El servidor parte las respuestas en trozos de 4096 bytes con el mismo id. Si el primero llega
+     * lleno puede haber más: entonces se envía un paquete vacío y todo lo que llega antes de su
+     * respuesta es del comando. No se envía antes porque el servidor lee cada paquete de una vez y
+     * cierra la conexión si en esa lectura llegan dos.
      */
     public synchronized String command(String command) throws IOException {
         int id = send(COMMAND, command);
-        StringBuilder body = new StringBuilder();
         Packet p = readPacket();
-        for (;;) {
-            if (p.id != id) throw new IOException("RCON reply out of order");
-            body.append(p.body);
-            if (p.body.getBytes(StandardCharsets.UTF_8).length < 4096) break;
-            socket.setSoTimeout(500); // respuesta de exactamente 4096 bytes: no viene nada más
-            try {
-                p = readPacket();
-            } catch (SocketTimeoutException e) {
-                break;
-            } finally {
-                socket.setSoTimeout(30_000);
+        if (p.id != id) throw new IOException("RCON reply out of order");
+        StringBuilder body = new StringBuilder(p.body);
+        if (p.size >= CHUNK) {
+            int end = send(COMMAND, "");
+            for (p = readPacket(); p.id != end; p = readPacket()) {
+                if (p.id != id) throw new IOException("RCON reply out of order");
+                body.append(p.body);
             }
         }
         return body.toString().replaceAll("§.", "");
@@ -61,7 +58,8 @@ public final class Rcon implements AutoCloseable {
         return id;
     }
 
-    private record Packet(int id, String body) {}
+    /** {@code size}: bytes del cuerpo tal como llegaron. */
+    private record Packet(int id, String body, int size) {}
 
     private Packet readPacket() throws IOException {
         byte[] header = new byte[4];
@@ -72,8 +70,8 @@ public final class Rcon implements AutoCloseable {
         ByteBuffer buf = ByteBuffer.wrap(rest).order(ByteOrder.LITTLE_ENDIAN);
         int id = buf.getInt();
         buf.getInt(); // tipo
-        String body = new String(rest, 8, Math.max(0, length - 10), StandardCharsets.UTF_8);
-        return new Packet(id, body);
+        int size = Math.max(0, length - 10);
+        return new Packet(id, new String(rest, 8, size, StandardCharsets.UTF_8), size);
     }
 
     @Override

@@ -9,24 +9,26 @@ import com.marcp.directauth.modtests.ClientDriver;
 public class Aether implements Scenario {
     @Override
     public void run(ClientDriver d) throws Exception {
+        String player = d.mc().getUser().getName();
         Scenario.joinNew(d);
         d.sleep(1000);
-        String jailed = where(d);
+        String jailed = where(d, player);
         d.check("new player is in the Aether while jailed", jailed.contains("aether:the_aether"), jailed);
         Scenario.register(d);
-        // Dónde está durante los segundos siguientes (Aether lo deja caer en paracaídas)
+        // Aether lo deja caer en paracaídas: debe seguir en el Aether durante toda la caída
         StringBuilder trail = new StringBuilder();
-        for (int i = 0; i < 8; i++) {
-            trail.append(where(d)).append("; ");
-            d.sleep(500);
+        boolean stayed = true;
+        for (int i = 0; i < 10; i++) {
+            String sample = where(d, player);
+            trail.append(sample).append("; ");
+            stayed &= sample.contains("aether:the_aether");
+            d.sleep(1000);
         }
-        String after = where(d);
-        d.check("new player is still in the Aether after /register", after.contains("aether:the_aether"), trail.toString());
+        d.check("new player stays in the Aether after /register", stayed, trail.toString());
         d.disconnect();
     }
 
-    private static String where(ClientDriver d) throws Exception {
-        String player = d.mc().getUser().getName();
+    private static String where(ClientDriver d, String player) throws Exception {
         String dimension = d.rcon("data get entity " + player + " Dimension").replaceAll(".*: ", "").trim();
         String pos = d.rcon("data get entity " + player + " Pos").replaceAll(".*: ", "").trim();
         return dimension + " " + pos;
