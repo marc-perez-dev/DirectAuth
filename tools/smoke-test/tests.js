@@ -132,11 +132,12 @@ const rconTest = async (cmd) => /Test passed/.test(await T.rcon(cmd))
   })
 
   // ========== Jaula ==========
-  await test('jail: chat, commands, movement, Q-drop, container click, creative slot, block break, damage, effects, armor stand', async () => {
+  await test('jail: chat, commands, movement, Q-drop, offhand swap, pick item, container click, creative slot, block break, damage, effects, armor stand', async () => {
     const JAIL = process.env.JAIL || 'Jail'
     let b = await register(JAIL, process.env.JAIL_IP || '127.0.0.8')
     await T.rcon(`give ${JAIL} minecraft:diamond 5`)
     await T.rcon(`give ${JAIL} minecraft:iron_helmet 1`)
+    await T.rcon(`item replace entity ${JAIL} inventory.0 with minecraft:emerald`)
     await T.sleep(300)
     await logout(b)
     const obs = await register(JAIL + 'O', '127.0.0.9')
@@ -144,11 +145,13 @@ const rconTest = async (cmd) => /Test passed/.test(await T.rcon(cmd))
     await T.expect(b, L.msgLoginRequest)
     await T.sleep(500)
 
-    // Chat: bloqueado y no llega a los demás
+    // Chat: bloqueado y no llega a los demás, ni a las mods que leen el chat (la IA de MCA)
     obs.mark = obs.msgs.length
+    await T.rcon('datest clear')
     T.send(b, 'hello_secret_chat')
     await T.expect(b, L.msgUseCommands)
     await T.expectNo(obs, /hello_secret_chat/, 800)
+    T.assert(!(await T.datestLog(JAIL)).some((e) => e.startsWith('chat:')), 'a mod saw the chat of a jailed player')
 
     // Comandos fuera de la lista blanca
     T.send(b, '/me hi')
@@ -192,6 +195,17 @@ const rconTest = async (cmd) => /Test passed/.test(await T.rcon(cmd))
     await T.sleep(500)
     T.assert(await T.countItem(JAIL, 'minecraft:diamond_block') === 0, 'creative slot packet gave items')
     await T.rcon(`gamemode survival ${JAIL}`)
+
+    // F (cambiar a la otra mano) y botón central (llevar un objeto del inventario a la barra)
+    const inOffhand = () => rconTest(`execute if data entity ${JAIL} Inventory[{Slot:-106b}]`)
+    const emeraldInSlot9 = () => rconTest(`execute if data entity ${JAIL} Inventory[{Slot:9b,id:"minecraft:emerald"}]`)
+    b.setQuickBarSlot(b.inventory.items().find((i) => i.name === 'diamond').slot - 36)
+    await T.sleep(200)
+    b._client.write('block_dig', { status: 6, location: { x: 0, y: 0, z: 0 }, face: 0, sequence: 0 })
+    b._client.write('pick_item', { slot: 9 })
+    await T.sleep(500)
+    T.assert(!(await inOffhand()), 'F moved the held item to the offhand')
+    T.assert(await emeraldInSlot9(), 'pick item moved an inventory item to the hotbar')
 
     // Romper bloque
     const p = (await T.posOf(JAIL)).map(Math.floor)
@@ -237,8 +251,21 @@ const rconTest = async (cmd) => /Test passed/.test(await T.rcon(cmd))
     obs.mark = obs.msgs.length
     T.send(b, 'hello_after_login')
     await T.expect(obs, /hello_after_login/)
+    // Control positivo: las mods ven el chat tras /login (y la validación del chat sigue cuadrando)
+    T.assert((await T.datestLog(JAIL)).includes('chat:hello_after_login'), 'control: mods did not see the chat after /login')
 
-    // Controles positivos: tras el login sí se puede tirar y romper
+    // Controles positivos: tras el login sí se puede cambiar de mano, usar el botón central,
+    // tirar y romper
+    await T.sleep(500)
+    b._client.write('pick_item', { slot: 9 })
+    await T.sleep(500)
+    T.assert(!(await emeraldInSlot9()), 'control: pick item did nothing after login')
+    b.setQuickBarSlot(b.inventory.items().find((i) => i.name === 'diamond').slot - 36)
+    await T.sleep(200)
+    b._client.write('block_dig', { status: 6, location: { x: 0, y: 0, z: 0 }, face: 0, sequence: 0 })
+    await T.sleep(500)
+    T.assert(await inOffhand(), 'control: F did not swap hands after login')
+    b._client.write('block_dig', { status: 6, location: { x: 0, y: 0, z: 0 }, face: 0, sequence: 0 })
     await T.sleep(500)
     const d2 = b.inventory.items().find((i) => i.name === 'diamond')
     b.setQuickBarSlot(d2.slot - 36)
@@ -250,9 +277,12 @@ const rconTest = async (cmd) => /Test passed/.test(await T.rcon(cmd))
     await T.sleep(500)
     T.assert(await T.countItem(JAIL, 'minecraft:diamond') === 0, 'control: tossStack did not drop after login')
     await T.sleep(1000)
-    const q = [b.entity.position.x, b.entity.position.y, b.entity.position.z].map(Math.floor)
+    // La Y del cliente puede quedar una milésima por debajo de -60: sin margen, floor() mira un bloque más abajo
+    const q = [b.entity.position.x, b.entity.position.y + 0.001, b.entity.position.z].map(Math.floor)
     const under = b.blockAt(new Vec3(q[0] + 1, q[1] - 1, q[2]))
-    T.assert(under && under.name === 'grass_block', `control: unexpected block ${under && under.name}`)
+    if (!(under && under.name === 'grass_block')) {
+      throw new Error(`control: unexpected block ${under && under.name} at ${q[0] + 1} ${q[1] - 1} ${q[2]} (bot at ${b.entity.position}, server ${await T.posOf(JAIL)})`)
+    }
     const t0 = Date.now()
     let dug = false
     await Promise.race([b.dig(under).then(() => { dug = true }).catch((e) => console.log('      control dig error:', e.message)), T.sleep(10000)])
@@ -277,18 +307,12 @@ const rconTest = async (cmd) => /Test passed/.test(await T.rcon(cmd))
     // Plataforma con un nexo cargado en el Nether
     // Mantener cargado el chunk del nexo para poder comprobarlo aunque no haya nadie en el Nether
     await T.rcon('execute in minecraft:the_nether run forceload add 0 0 15 15')
-    // Primero llevar al jugador (si no, el chunk no está cargado y fill/setblock fallan)
-    await T.rcon(`execute in minecraft:the_nether run tp ${DEAD} 10.5 70 12.5`)
-    for (let i = 0; i < 100 && !(/nether/.test(b.game.dimension) && b.blockAt(new Vec3(10, 69, 10))); i++) await T.sleep(100)
-    await T.sleep(500)
+    // La plataforma antes de llevar al jugador: si no, puede caer a la lava mientras se construye
+    // (fill falla hasta que el chunk forzado se carga)
     for (let i = 0; i < 100 && !/Successfully/.test(await T.rcon('execute in minecraft:the_nether run fill 6 69 6 14 75 14 minecraft:air')); i++) await T.sleep(100)
     await T.rcon('execute in minecraft:the_nether run fill 6 69 6 14 69 14 minecraft:obsidian')
     await T.rcon('execute in minecraft:the_nether run setblock 10 70 10 minecraft:respawn_anchor[charges=2]')
     T.assert(await rconTest('execute in minecraft:the_nether if block 10 70 10 minecraft:respawn_anchor[charges=2]'), 'anchor setup failed')
-    // Salir y volver a entrar al Nether para que el bot reciba el chunk ya construido
-    await T.rcon(`execute in minecraft:overworld run tp ${DEAD} 0.5 -60 0.5`)
-    for (let i = 0; i < 50 && !/overworld/.test(b.game.dimension); i++) await T.sleep(100)
-    await T.sleep(500)
     await T.rcon(`execute in minecraft:the_nether run tp ${DEAD} 10.5 70 12.5`)
     let anchor = null
     for (let i = 0; i < 100 && !(anchor && anchor.name === 'respawn_anchor'); i++) { await T.sleep(100); anchor = b.blockAt(new Vec3(10, 70, 10)) }
@@ -516,7 +540,7 @@ const rconTest = async (cmd) => /Test passed/.test(await T.rcon(cmd))
   })
 
   await test('database: a fresh database gets the current schema and no backup', async () => {
-    T.assert(T.schemaVersion() === 1, `user_version ${T.schemaVersion()}`)
+    T.assert(T.schemaVersion() === 2, `user_version ${T.schemaVersion()}`)
     T.assert(T.dbBackups().length === 0, `unexpected backups: ${T.dbBackups()}`)
   })
 
@@ -525,82 +549,108 @@ const rconTest = async (cmd) => /Test passed/.test(await T.rcon(cmd))
   const OFF = T.offlineUUID('Notch')
   const nd = (u) => u.replace(/-/g, '')
 
-  await test('premium: /online migrates files (RENAME, DIRECTORY, TEXT_REPLACE) and kicks', async () => {
-    fs.mkdirSync(path.join(T.WORLD, 'ftbquests'), { recursive: true })
-    fs.mkdirSync(path.join(T.WORLD, 'deaths', OFF), { recursive: true })
-    fs.writeFileSync(path.join(T.WORLD, 'deaths', OFF, 'death1.txt'), 'x')
-    const quest = Buffer.concat([Buffer.from(`owner: "${OFF}"\nid: ${nd(OFF)}\nname: "ñandú"\n`, 'utf8'), Buffer.from([0xff, 0xfe, 0x00, 0x41])])
-    fs.writeFileSync(path.join(T.WORLD, 'ftbquests', `${OFF}.snbt`), quest)
-    fs.writeFileSync(path.join(T.WORLD, 'ftbquests', `${ON}.snbt`), 'stale')
+  // Sin ficheros que mover: no se crea nada bajo la UUID de Mojang
+  const noMojangFiles = (uuid) => ['playerdata', 'stats', 'advancements'].filter((d) => fs.readdirSync(path.join(T.WORLD, d)).some((f) => f.startsWith(uuid)))
+  // Propiedades (skin) que el cliente recibe de un jugador
+  const skinSent = (b, textures) => JSON.stringify(b.playerInfo).includes(textures)
 
+  await test('premium: /online keeps the account UUID, moves nothing and keeps the player connected', async () => {
+    // Los objetos que otras pruebas tiran en el spawn acabarían en su inventario
+    await T.rcon('kill @e[type=item]')
     const b = await register('Notch', '127.0.0.40')
+    await T.rcon('clear Notch')
     await T.rcon('give Notch minecraft:diamond 7')
     await T.sleep(300)
     T.send(b, '/online')
+    await T.expect(b, L.msgOnlineModeKeepsData)
     await T.expect(b, L.msgPremiumWarning)
     T.send(b, '/online wrongpw')
     await T.expect(b, L.errWrongPasswordSimple)
     T.send(b, `/online ${PW}`)
     await T.expect(b, L.msgVerifying)
-    await T.expectKick(b, L.msgPremiumKick, 15000)
-    await T.sleep(500)
+    await T.expect(b, L.msgPremiumEnabled, 15000)
+    await T.expectConnected(b, 500)
     const u = T.user('Notch')
-    T.assert(u.isPremium === 1 && u.onlineUUID === ON && u.offlineUUID === OFF, `db: ${JSON.stringify(u)}`)
-    T.assert(exists(`playerdata/${ON}.dat`), 'playerdata not migrated')
-    T.assert(exists(`stats/${ON}.json`), 'stats not migrated')
-    T.assert(exists(`deaths/${ON}/death1.txt`) && !exists(`deaths/${OFF}`), 'deaths dir not migrated')
-    const migrated = fs.readFileSync(path.join(T.WORLD, 'ftbquests', `${ON}.snbt`))
-    const expected = Buffer.from(quest.toString('latin1').split(OFF).join(ON).split(nd(OFF)).join(nd(ON)), 'latin1')
-    T.assert(migrated.equals(expected), 'TEXT_REPLACE output not byte-exact')
-    T.assert(fs.readFileSync(path.join(T.WORLD, 'ftbquests', `${ON}.snbt.bak`), 'utf8') === 'stale', 'existing destination not backed up')
+    T.assert(u.isPremium === 1 && u.onlineUUID === ON && u.playerUUID === OFF && u.offlineUUID === null, `db: ${JSON.stringify(u)}`)
+    await T.quit(b)
+    T.assert(noMojangFiles(ON).length === 0, `files under the Mojang UUID: ${noMojangFiles(ON)}`)
   })
 
-  await test('premium: offline impostors (any case) cannot join a premium account', async () => {
+  await test('premium: a Mojang-verified join plays with the account UUID, inventory and skin', async () => {
+    const textures = await T.premium('Notch', ON)
+    const b = await joinOk('Notch', '127.0.0.41')
+    await T.expect(b, L.msgAutoLogin)
+    T.assert(b._client.uuid === OFF, `joined as ${b._client.uuid}`)
+    T.assert(await T.countItem('Notch', 'minecraft:diamond') === 7, `inventory: ${await T.countItem('Notch', 'minecraft:diamond')}`)
+    T.assert(skinSent(b, textures), 'Mojang skin not kept')
+    await T.quit(b)
+    T.assert(noMojangFiles(ON).length === 0, `files under the Mojang UUID: ${noMojangFiles(ON)}`)
+  })
+
+  await test('premium: offline impostors (any case) and other Mojang accounts cannot join', async () => {
+    T.notPremium('Notch')
     for (const name of ['Notch', 'notch']) {
       const b = await T.join(name, '127.0.0.41')
       await T.sleep(500)
       T.assert(!b.spawned, `${name} spawned into a premium account`)
     }
+    // Mojang confirma el nombre, pero con la cuenta de otro (p. ej. el nombre cambió de dueño)
+    await T.premium('Notch', '00000000-0000-4000-8000-000000000042')
+    const logAt = T.serverLogSize()
+    const other = await T.join('Notch', '127.0.0.41')
+    await T.sleep(500)
+    T.notPremium('Notch')
+    T.assert(!other.connected, 'another Mojang account stayed connected')
+    // El kick llega en el mismo tick que la entrada y el bot a veces no llega a leer el motivo
+    const reason = T.strip(L.msgPremiumError).split('\n')[0]
+    T.assert(T.serverLogSince(logAt).includes(`Notch lost connection: ${reason}`), `no "${reason}" kick in the server log`)
   })
 
-  await test('premium: admin disables online mode while offline, data comes back', async () => {
+  await test('premium: admin disables online mode while offline; the account keeps its UUID', async () => {
     await adminCmd('/directauth online Notch false', T.re(L.msgAdminPremiumUpdated), 10000)
     const u = T.user('Notch')
-    T.assert(u.isPremium === 0 && u.onlineUUID === null && u.offlineUUID === null, `db: ${JSON.stringify(u)}`)
-    T.assert(exists(`playerdata/${OFF}.dat`) && !exists(`playerdata/${ON}.dat`), 'playerdata not moved back')
-    T.assert(exists(`deaths/${OFF}/death1.txt`), 'deaths not moved back')
-    T.assert(fs.readFileSync(path.join(T.WORLD, 'ftbquests', `${OFF}.snbt`), 'latin1').includes(nd(OFF)), 'quest UUIDs not reverted')
+    T.assert(u.isPremium === 0 && u.onlineUUID === null && u.playerUUID === OFF, `db: ${JSON.stringify(u)}`)
     const b = await login('Notch', '127.0.0.42')
-    await T.sleep(300)
-    T.assert(await T.countItem('Notch', 'minecraft:diamond') === 7, `inventory lost: ${await T.countItem('Notch', 'minecraft:diamond')}`)
+    T.assert(b._client.uuid === OFF, `joined as ${b._client.uuid}`)
+    T.assert(await T.countItem('Notch', 'minecraft:diamond') === 7, `inventory: ${await T.countItem('Notch', 'minecraft:diamond')}`)
   })
 
-  await test('premium: admin enable requires the player online; works when online', async () => {
-    await adminCmd('/directauth online Notch true', T.re(L.errAdminPlayerMustBeOnline), 10000)
-    T.assert(T.user('Notch').isPremium === 0, 'enabled while offline')
-    const b = await login('Notch', '127.0.0.42')
+  await test('premium: admin enable needs the player online only if the account has no UUID yet', async () => {
+    // Notch ya tiene su UUID guardada: se puede activar sin él, y sigue conectado si lo está
     await adminCmd('/directauth online Notch true', T.re(L.msgAdminPremiumUpdated), 15000)
-    await T.expectKick(b, L.msgAdminModeChangedKick)
-    const u = T.user('Notch')
-    T.assert(u.isPremium === 1 && u.onlineUUID === ON && u.offlineUUID === OFF, `db: ${JSON.stringify(u)}`)
-    T.assert(exists(`playerdata/${ON}.dat`), 'playerdata not migrated')
-    await adminCmd('/directauth online Notch false', T.re(L.msgAdminPremiumUpdated), 10000)
-    T.assert(T.user('Notch').isPremium === 0, 'not disabled again')
+    T.assert(T.user('Notch').isPremium === 1 && T.user('Notch').playerUUID === OFF, `db: ${JSON.stringify(T.user('Notch'))}`)
+    const b = await register('jeb_', '127.0.0.44')
+    await logout(b)
+    await adminCmd('/directauth online jeb_ true', T.re(L.errAdminEnableNeedsPlayer), 10000)
+    T.assert(T.user('jeb_').isPremium === 0, 'enabled while offline')
+    const j = await login('jeb_', '127.0.0.44')
+    await adminCmd('/directauth online jeb_ true', T.re(L.msgAdminPremiumUpdated), 15000)
+    await T.expectConnected(j, 500)
+    const u = T.user('jeb_')
+    T.assert(u.isPremium === 1 && /^[0-9a-f-]{36}$/.test(u.onlineUUID) && u.playerUUID === T.offlineUUID('jeb_'), `db: ${JSON.stringify(u)}`)
+    await adminCmd('/directauth online jeb_ false', T.re(L.msgAdminPremiumUpdated), 10000)
+    await T.expectConnected(j, 300)
+    T.assert(T.user('jeb_').isPremium === 0 && T.user('jeb_').playerUUID === T.offlineUUID('jeb_'), 'not disabled again')
   })
 
-  await test('premium: failed migration is rolled back, player stays connected and offline', async () => {
-    const b = await login('Notch', '127.0.0.42')
-    fs.chmodSync(path.join(T.WORLD, 'stats'), 0o555)
-    try {
-      T.send(b, `/online ${PW}`)
-      await T.expect(b, L.errPremiumMigrationFailed, 15000)
-      await T.expectConnected(b, 500)
-      T.assert(T.user('Notch').isPremium === 0, 'db changed')
-      T.assert(exists(`playerdata/${OFF}.dat`) && !exists(`playerdata/${ON}.dat`), 'playerdata not rolled back')
-      T.send(b, 'still_here')
-      await T.expectConnected(b, 300)
-    } finally {
-      fs.chmodSync(path.join(T.WORLD, 'stats'), 0o755)
+  await test('premium: accounts converted by older versions keep the Mojang UUID in both modes', async () => {
+    // Como la dejaba 1.3.0: datos migrados a la UUID de Mojang, sin playerUUID
+    T.db("UPDATE users SET isPremium = 1, onlineUUID = ?, offlineUUID = ?, playerUUID = NULL WHERE username = 'notch'", [ON, OFF], { write: true })
+    await T.premium('Notch', ON)
+    const b = await joinOk('Notch', '127.0.0.45')
+    await T.expect(b, L.msgAutoLogin)
+    T.assert(b._client.uuid === ON, `premium join as ${b._client.uuid}`)
+    await T.rcon('give Notch minecraft:emerald 3')
+    await T.sleep(300)
+    await T.quit(b)
+    T.notPremium('Notch')
+    await adminCmd('/directauth online Notch false', T.re(L.msgAdminPremiumUpdated), 10000)
+    T.assert(T.user('Notch').playerUUID === ON, `db: ${JSON.stringify(T.user('Notch'))}`)
+    for (const name of ['Notch', 'notch']) {
+      const o = await login(name, '127.0.0.45')
+      T.assert(o._client.uuid === ON, `${name} offline join as ${o._client.uuid}`)
+      T.assert(await T.countItem(name, 'minecraft:emerald') === 3, `${name} inventory: ${await T.countItem(name, 'minecraft:emerald')}`)
+      await T.quit(o)
     }
   })
 
@@ -609,6 +659,20 @@ const rconTest = async (cmd) => /Test passed/.test(await T.rcon(cmd))
     T.send(b, `/online ${PW}`)
     await T.expect(b, L.errMojangNotFound, 10000)
     T.assert(T.user('Notch#').isPremium === 0, 'Notch# became premium')
+  })
+
+  await test('premium: a join that does not get the account UUID is turned away', async () => {
+    const b = await register('BadUuid', '127.0.0.46')
+    await logout(b)
+    // UUID ilegible (DB editada a mano): el login no puede darle la de la cuenta
+    T.db("UPDATE users SET playerUUID = 'abc' WHERE username = 'baduuid'", [], { write: true })
+    const logAt = T.serverLogSize()
+    const j = await T.join('BadUuid', '127.0.0.46')
+    await T.sleep(500)
+    T.assert(!j.connected, 'joined with another UUID')
+    T.assert(T.serverLogSince(logAt).includes('instead of the account'), 'no warning in the server log')
+    T.db("UPDATE users SET playerUUID = NULL WHERE username = 'baduuid'", [], { write: true })
+    await login('BadUuid', '127.0.0.46')
   })
 
   // ========== Config ==========
@@ -628,19 +692,12 @@ const rconTest = async (cmd) => /Test passed/.test(await T.rcon(cmd))
     }
   })
 
-  await test('config: unknown migration mode is ignored and the file is not rewritten', async () => {
+  await test('config: the migrationMap of older versions is dropped', async () => {
     const cfgPath = path.join(T.CFG_DIR, 'DirectAuth-config.json')
-    const good = fs.readFileSync(cfgPath, 'utf8')
-    const bad = good.replace('"TEXT_REPLACE"', '"TEXT_REPLAC"')
-    fs.writeFileSync(cfgPath, bad)
-    try {
-      const out = await T.rcon('directauth reload')
-      T.assert(T.re(L.msgConfigReloaded).test(out), `reload output: ${out}`)
-      T.assert(fs.readFileSync(cfgPath, 'utf8') === bad, 'file was rewritten')
-    } finally {
-      fs.writeFileSync(cfgPath, good)
-      await T.rcon('directauth reload')
-    }
+    fs.writeFileSync(cfgPath, JSON.stringify({ ...T.readConfig(), migrationMap: { playerdata: 'RENAME' } }, null, 2))
+    const out = await T.rcon('directauth reload')
+    T.assert(T.re(L.msgConfigReloaded).test(out), `reload output: ${out}`)
+    T.assert(!('migrationMap' in T.readConfig()), 'migrationMap still in the file')
   })
 
   // ========== Extra ==========
@@ -736,16 +793,14 @@ const rconTest = async (cmd) => /Test passed/.test(await T.rcon(cmd))
     await T.expectKick(b, L.msgAdminPasswordResetKick)
     console.log(`      resetpass over RCON answered in ${r.ms}ms`)
     r = await timed('directauth online RconUser true')
-    T.assert(T.re(L.errAdminPlayerMustBeOnline).test(r.out), `online offline player: ${JSON.stringify(r.out)}`)
+    T.assert(T.re(L.errAdminEnableNeedsPlayer).test(r.out), `online offline player: ${JSON.stringify(r.out)}`)
     r = await timed('directauth unregister RconUser')
     T.assert(T.re(L.msgAdminUnregisterSuccess).test(r.out), `unregister: ${JSON.stringify(r.out)}`)
     T.assert(!T.user('RconUser'), 'row still present')
-    // Con consulta a Mojang y migración de datos
-    const n = await login('Notch', '127.0.0.42')
+    // Con consulta a Mojang
     r = await timed('directauth online Notch true')
     T.assert(/Online Mode status updated for Notch: true/.test(r.out), `online true: ${JSON.stringify(r.out)}`)
-    await T.expectKick(n, L.msgAdminModeChangedKick)
-    console.log(`      online true (Mojang + migration) over RCON answered in ${r.ms}ms`)
+    console.log(`      online true (Mojang lookup) over RCON answered in ${r.ms}ms`)
     r = await timed('directauth online Notch false')
     T.assert(/Online Mode status updated for Notch: false/.test(r.out), `online false: ${JSON.stringify(r.out)}`)
     // Los comandos que no son de DirectAuth no esperan
@@ -760,7 +815,8 @@ const rconTest = async (cmd) => /Test passed/.test(await T.rcon(cmd))
     const b = await joinOk(NAME, '127.0.0.94')
     await T.sleep(1100)
     b.chat(`/register ${PW}`)
-    b._client.socket.destroy() // cortar sin esperar respuesta
+    // Cortar sin esperar respuesta; end() envía antes lo ya escrito (destroy() podía perder el comando)
+    b._client.socket.end()
     await T.sleep(1000)
     T.assert(T.user(NAME), 'account not created')
     // Según quién gane la carrera, la primera conexión llegó o no a autenticarse (y desde su IP
@@ -780,13 +836,370 @@ const rconTest = async (cmd) => /Test passed/.test(await T.rcon(cmd))
       await T.expect(b, L.msgLoginRequest)
       await T.sleep(1100)
       b.chat(`/login ${PW}`)
-      b._client.socket.destroy()
+      b._client.socket.end()
       // Reentrar desde otra IP (sin sesión de gracia) mientras el hash está en curso
       const imp = await joinOk(NAME, '127.0.0.96')
       await T.sleep(800)
       T.send(imp, 'should_be_blocked')
       await T.expect(imp, L.msgUseCommands)
       await T.quit(imp)
+    }
+  })
+
+  // ========== Otras mods (mod de pruebas directauth_test, ver src/testmod) ==========
+  // Mensajes del SimpleChannel del mod de pruebas: DirectAuth los distingue por canal#índice
+  const ACTION = 'directauth_test:main#0'
+  const HELLO = 'directauth_test:main#1'
+  const SCREEN = 'directauth_test:main#2'
+  const DATA = 'directauth_test:main#3'
+  const ARCH_CLAIM = 'architectury:network#directauth_test:claim'
+  const ARCH_TEAM = 'architectury:network#directauth_test:team'
+  const sameSet = (a, b) => a.length === b.length && [...a].sort().join() === [...b].sort().join()
+  // Nombres nuevos para repetir estas pruebas sobre el mismo mundo: FRESH=2 node tests.js ...
+  // (el prefijo se mantiene porque el mod de pruebas decide por él qué simular)
+  const fresh = (name) => name + (process.env.FRESH || '')
+
+  await test('mod payloads from a jailed player wait for /login: only the last of each type runs, never after a disconnect', async () => {
+    const NAME = fresh('ModPay')
+    let b = await register(NAME, '127.0.0.110')
+    await logout(b)
+    await T.rcon('datest clear')
+    b = await joinOk(NAME, '127.0.0.110')
+    await T.expect(b, L.msgLoginRequest)
+    // Un paquete único al conectar (como la clave de Simple Voice Chat) y una ráfaga de otro tipo
+    // (como el movimiento que Epic Fight envía en cada tick)
+    T.sendPayload(b, HELLO, 'once')
+    for (let i = 1; i <= 300; i++) T.sendPayload(b, ACTION, 'a' + i)
+    // Architectury: un canal para todo, con el id de cada mensaje dentro
+    T.sendPayload(b, ARCH_CLAIM, 'c1')
+    T.sendPayload(b, ARCH_CLAIM, 'c2')
+    T.sendPayload(b, ARCH_TEAM, 't1')
+    await T.sleep(1500)
+    let log = await T.datestLog(NAME)
+    T.assert(log.length === 0, `the server ran mod payloads of a jailed player: ${log.slice(0, 5)}… (${log.length})`)
+    T.send(b, `/login ${PW}`)
+    await T.expect(b, L.msgAuthenticated)
+    await T.sleep(800)
+    log = await T.datestLog(NAME)
+    T.assert(sameSet(log, ['hello:once', 'action:a300', 'arch:claim:c2', 'arch:team:t1']), `after /login expected the last of each type, got ${log.slice(0, 5)}… (${log.length})`)
+    // Control positivo: autenticado, llegan al momento
+    T.sendPayload(b, ACTION, 'live')
+    await T.sleep(500)
+    T.assert((await T.datestLog(NAME)).includes('action:live'), 'control: payload after /login did not run')
+    await logout(b)
+
+    // Lo enviado por una conexión que se va sin autenticarse no se ejecuta nunca
+    await T.rcon('datest clear')
+    b = await joinOk(NAME, '127.0.0.110')
+    await T.expect(b, L.msgLoginRequest)
+    T.sendPayload(b, ACTION, 'ghost')
+    await T.sleep(300)
+    await T.quit(b)
+    b = await login(NAME, '127.0.0.110')
+    await T.sleep(800)
+    log = await T.datestLog(NAME)
+    T.assert(!log.includes('action:ghost'), `payload of a connection that left unauthenticated ran later: ${log}`)
+    await logout(b)
+
+    // Lo retenido tiene un límite (64 tipos): un cliente sin autenticar que inventa tipos no llena
+    // la memoria del servidor; lo que no cabe se descarta
+    await T.rcon('datest clear')
+    b = await joinOk(NAME, '127.0.0.110')
+    await T.expect(b, L.msgLoginRequest)
+    T.sendPayload(b, HELLO, 'first')
+    for (let i = 1; i <= 70; i++) T.sendPayload(b, `architectury:network#directauth_test:junk${i}`, 'x')
+    T.sendPayload(b, ACTION, 'over')
+    await T.sleep(800)
+    T.send(b, `/login ${PW}`)
+    await T.expect(b, L.msgAuthenticated)
+    await T.sleep(800)
+    log = await T.datestLog(NAME)
+    const junk = log.filter((e) => e.startsWith('arch:junk')).length
+    T.assert(log.includes('hello:first') && junk === 63 && !log.includes('action:over'),
+      `expected the first 64 held types to run and the rest dropped, got hello:first ${log.includes('hello:first')}, ${junk} junk, action:over ${log.includes('action:over')}`)
+    await logout(b)
+
+    // heldPayloadExceptions: esos paquetes pasan aunque el jugador esté en la jaula
+    const cfgPath = path.join(T.CFG_DIR, 'DirectAuth-config.json')
+    const original = fs.readFileSync(cfgPath, 'utf8')
+    await T.setConfig({ heldPayloadExceptions: [HELLO] })
+    try {
+      await T.rcon('datest clear')
+      b = await joinOk(NAME, '127.0.0.110')
+      await T.expect(b, L.msgLoginRequest)
+      T.sendPayload(b, HELLO, 'excepted')
+      T.sendPayload(b, ACTION, 'held')
+      await T.sleep(800)
+      log = await T.datestLog(NAME)
+      T.assert(sameSet(log, ['hello:excepted']), `with ${HELLO} excepted, expected only it while jailed, got ${log}`)
+      await T.quit(b)
+
+      // Una entrada puede ser un canal entero: pasan todos sus mensajes
+      await T.setConfig({ heldPayloadExceptions: ['directauth_test:main'] })
+      await T.rcon('datest clear')
+      b = await joinOk(NAME, '127.0.0.110')
+      await T.expect(b, L.msgLoginRequest)
+      T.sendPayload(b, HELLO, 'channel')
+      T.sendPayload(b, ACTION, 'channel')
+      await T.sleep(800)
+      log = await T.datestLog(NAME)
+      T.assert(sameSet(log, ['hello:channel', 'action:channel']), `with the whole channel excepted, expected both while jailed, got ${log}`)
+    } finally {
+      fs.writeFileSync(cfgPath, original)
+      await T.rcon('directauth reload')
+    }
+  })
+
+  await test('vanilla op packets from a jailed op impostor are ignored (command blocks, difficulty, structures, NBT queries, books, recipes)', async () => {
+    const NAME = fresh('OpImp')
+    const IP = '127.0.0.111'
+    let b = await register(NAME, IP)
+    await T.rcon(`op ${NAME}`)
+    await T.rcon(`gamemode creative ${NAME}`)
+    await T.rcon(`recipe give ${NAME} minecraft:oak_planks`)
+    await T.rcon(`clear ${NAME}`)
+    await T.rcon(`item replace entity ${NAME} hotbar.0 with minecraft:writable_book`)
+    await T.rcon(`item replace entity ${NAME} hotbar.1 with minecraft:oak_log`)
+    await T.sleep(300)
+    await logout(b)
+    await T.rcon('setblock 3 -60 3 minecraft:command_block')
+    await T.rcon('setblock 3 -60 5 minecraft:structure_block')
+    await T.rcon('setblock 3 -60 7 minecraft:jigsaw')
+    await T.rcon('kill @e[type=command_block_minecart]')
+    await T.rcon('summon minecraft:command_block_minecart 5.5 -60 3.5')
+
+    const nbtAnswers = []
+    // Lo que intentaría un cliente modificado con permisos de op, y lo que hay que comprobar después
+    const attempt = async (bot, word) => {
+      const cart = Object.values(bot.entities).find((e) => e.name === 'command_block_minecart')
+      T.assert(cart, 'command block minecart not visible')
+      bot._client.write('update_command_block', { location: { x: 3, y: -60, z: 3 }, command: `say ${word}`, mode: 2, flags: 0 })
+      bot._client.write('update_command_block_minecart', { entityId: cart.id, command: `say ${word}`, track_output: false })
+      bot._client.write('update_structure_block', {
+        location: { x: 3, y: -60, z: 5 }, action: 0, mode: 0, name: `datest:${word}`, offset_x: 0, offset_y: 1, offset_z: 0,
+        size_x: 1, size_y: 1, size_z: 1, mirror: 0, rotation: 0, metadata: '', integrity: 1, seed: 0, flags: 0
+      })
+      bot._client.write('update_jigsaw_block', {
+        location: { x: 3, y: -60, z: 7 }, name: `minecraft:${word}`, target: 'minecraft:empty', pool: 'minecraft:empty',
+        finalState: 'minecraft:air', jointType: 'rollable', selection_priority: 0, placement_priority: 0
+      })
+      bot._client.write('set_difficulty', { newDifficulty: 'hard' })
+      bot._client.write('lock_difficulty', { locked: true })
+      bot._client.write('query_entity_nbt', { transactionId: 7, entityId: cart.id })
+      bot._client.write('query_block_nbt', { transactionId: 8, location: { x: 3, y: -60, z: 3 } })
+      bot._client.write('edit_book', { hand: 0, pages: [word], title: undefined })
+      bot._client.write('craft_recipe_request', { windowId: 0, recipe: 'minecraft:oak_planks', makeAll: false })
+      await T.sleep(1500)
+    }
+    const state = async () => ({
+      commandBlock: await T.rcon('data get block 3 -60 3 Command'),
+      minecart: await T.rcon('data get entity @e[type=command_block_minecart,limit=1] Command'),
+      structure: await T.rcon('data get block 3 -60 5 name'),
+      jigsaw: await T.rcon('data get block 3 -60 7 name'),
+      difficulty: await T.rcon('difficulty'),
+      book: await T.rcon(`data get entity ${NAME} Inventory[{Slot:0b}]`),
+      // /clear también cuenta la rejilla de crafteo: el NBT del inventario no la incluye
+      logInInventory: await rconTest(`execute if data entity ${NAME} Inventory[{id:"minecraft:oak_log"}]`)
+    })
+
+    try {
+      b = await joinOk(NAME, IP)
+      b._client.on('nbt_query_response', (p) => nbtAnswers.push(p))
+      await T.expect(b, L.msgLoginRequest)
+      await T.sleep(800)
+      await attempt(b, 'jailed')
+      let s = await state()
+      const leaks = []
+      if (s.commandBlock.includes('jailed')) leaks.push('command block rewritten')
+      if (s.minecart.includes('jailed')) leaks.push('command block minecart rewritten')
+      if (s.structure.includes('jailed')) leaks.push('structure block rewritten')
+      if (s.jigsaw.includes('jailed')) leaks.push('jigsaw block rewritten')
+      if (!/peaceful/i.test(s.difficulty)) leaks.push(`difficulty changed (${s.difficulty.trim()})`)
+      if (nbtAnswers.length) leaks.push(`answered ${nbtAnswers.length} NBT queries`)
+      if (s.book.includes('jailed')) leaks.push('book edited')
+      if (!s.logInInventory) leaks.push('recipe placed in the crafting grid')
+
+      // Controles positivos: tras /login los mismos paquetes sí funcionan (se comprueban aunque
+      // haya fugas, para que el informe diga también si la prueba de cada paquete es válida)
+      T.send(b, `/login ${PW}`)
+      await T.expect(b, L.msgAuthenticated)
+      await T.sleep(500)
+      // ¿Quedó bloqueada la dificultad desde la jaula? Un op autenticado no podría cambiarla
+      b._client.write('set_difficulty', { newDifficulty: 'easy' })
+      await T.sleep(500)
+      if (!/easy/i.test(await T.rcon('difficulty'))) {
+        leaks.push('difficulty locked')
+        b._client.write('lock_difficulty', { locked: false })
+        await T.sleep(300)
+      }
+      // Devolver el tronco de la rejilla al inventario (cerrar el inventario la vacía), para que el
+      // control de la receta no pase solo porque el intento desde la jaula ya lo movió
+      b._client.write('close_window', { windowId: 0 })
+      await T.sleep(300)
+      const missing = []
+      if (!(await rconTest(`execute if data entity ${NAME} Inventory[{id:"minecraft:oak_log"}]`))) missing.push('recipe (log not back in the inventory)')
+      const answersBefore = nbtAnswers.length
+      await attempt(b, 'control')
+      s = await state()
+      if (!s.commandBlock.includes('control')) missing.push('command block')
+      if (!s.minecart.includes('control')) missing.push('minecart')
+      if (!s.structure.includes('control')) missing.push('structure block')
+      if (!s.jigsaw.includes('control')) missing.push('jigsaw')
+      if (!/hard/i.test(s.difficulty)) missing.push('difficulty')
+      if (nbtAnswers.length < answersBefore + 2) missing.push('NBT queries')
+      if (!s.book.includes('control')) missing.push('book')
+      if (s.logInInventory) missing.push('recipe')
+      b._client.write('set_difficulty', { newDifficulty: 'normal' })
+      await T.sleep(500)
+      if (!/hard/i.test(await T.rcon('difficulty'))) missing.push('difficulty lock')
+      T.assert(!leaks.length && !missing.length,
+        (leaks.length ? 'jailed op impostor: ' + leaks.join(', ') + '. ' : '') +
+        (missing.length ? 'control: did not work after /login: ' + missing.join(', ') : ''))
+    } finally {
+      // Deshacer aunque falle a medias: bloqueo de dificultad (solo un op autenticado puede
+      // quitarlo), dificultad, op, modo de juego y bloques
+      if (b.connected) {
+        if (!b.msgs.some((m) => T.re(L.msgAuthenticated).test(m))) {
+          T.send(b, `/login ${PW}`)
+          await T.expect(b, L.msgAuthenticated).catch(() => {})
+        }
+        b._client.write('lock_difficulty', { locked: false })
+        await T.sleep(300)
+      }
+      await T.rcon('difficulty peaceful')
+      await T.rcon(`deop ${NAME}`)
+      await T.rcon(`gamemode survival ${NAME}`).catch(() => {})
+      await T.rcon('kill @e[type=command_block_minecart]')
+      for (const z of [3, 5, 7]) await T.rcon(`setblock 3 -60 ${z} minecraft:air`)
+    }
+  })
+
+  await test('screens from other mods: listed payloads wait for /login (only the last one), other payloads arrive at once', async () => {
+    const cfgPath = path.join(T.CFG_DIR, 'DirectAuth-config.json')
+    const original = fs.readFileSync(cfgPath, 'utf8')
+    await T.setConfig({ deferredScreenPayloads: [SCREEN], logJailPayloads: true })
+    const logStart = T.serverLogSize()
+    try {
+      const NAME = fresh('ScrMod')
+      const IP = '127.0.0.112'
+      // Cuenta nueva: la mod abre su pantalla al entrar, antes de /register
+      let b = await joinOk(NAME, IP)
+      await T.expect(b, L.msgWelcome)
+      await T.sleep(800)
+      T.assert(T.received(b, DATA).includes('login'), `non-screen payload was held: ${JSON.stringify(b.payloads)}`)
+      // logJailPayloads: el log dice qué recibe un jugador en la jaula y qué se aplaza
+      const logged = T.serverLogSince(logStart)
+      T.assert(logged.includes(`payload ${DATA} to unauthenticated ${NAME}`) && logged.includes(`payload ${SCREEN} to unauthenticated ${NAME} (deferred`),
+        'logJailPayloads did not log the payloads sent to the jailed player')
+      await T.rcon(`datest screen ${NAME} first`)
+      await T.rcon(`datest screen ${NAME} last`)
+      await T.sleep(500)
+      T.assert(T.received(b, SCREEN).length === 0, `screen payloads reached a jailed player: ${T.received(b, SCREEN)}`)
+      await T.sleep(300)
+      T.send(b, `/register ${PW}`)
+      await T.expect(b, L.msgRegistered)
+      await T.sleep(800)
+      T.assert(JSON.stringify(T.received(b, SCREEN)) === '["last"]', `after /register expected only ["last"], got ${JSON.stringify(T.received(b, SCREEN))}`)
+      await logout(b)
+
+      // Cuenta existente: llega tras /login
+      b = await joinOk(NAME, IP)
+      await T.expect(b, L.msgLoginRequest)
+      await T.sleep(800)
+      T.assert(T.received(b, SCREEN).length === 0, `screen payload reached a jailed player: ${T.received(b, SCREEN)}`)
+      T.send(b, `/login ${PW}`)
+      await T.expect(b, L.msgAuthenticated)
+      await T.sleep(800)
+      T.assert(JSON.stringify(T.received(b, SCREEN)) === '["login"]', `after /login expected ["login"], got ${JSON.stringify(T.received(b, SCREEN))}`)
+      await T.quit(b)
+
+      // Sesión restaurada al entrar: llega sin esperar
+      b = await joinOk(NAME, IP)
+      await T.expect(b, L.msgSessionRestored)
+      await T.sleep(800)
+      T.assert(JSON.stringify(T.received(b, SCREEN)) === '["login"]', `with a restored session expected ["login"], got ${JSON.stringify(T.received(b, SCREEN))}`)
+    } finally {
+      fs.writeFileSync(cfgPath, original)
+      await T.rcon('directauth reload')
+    }
+  })
+
+  await test('menus opened by the server wait for /login (vanilla and Forge)', async () => {
+    const NAME = fresh('MenuMod')
+    const IP = '127.0.0.113'
+    let b = await register(NAME, IP)
+    await logout(b)
+    await T.rcon('datest clear')
+    b = await joinOk(NAME, IP)
+    await T.expect(b, L.msgLoginRequest)
+    await T.sleep(500)
+    await T.rcon(`datest menu ${NAME} cmd`)
+    await T.sleep(800)
+    const jailedWindows = b.windows.length
+    // Un clic en un botón del menú, sea cual sea su id (como el selector de raza de Tensura)
+    for (let id = 1; id <= 3; id++) b._client.write('enchant_item', { windowId: id, enchantment: 3 })
+    await T.sleep(500)
+    const jailedClicks = (await T.datestLog(NAME)).filter((e) => e.startsWith('button:'))
+    T.assert(jailedWindows === 0 && jailedClicks.length === 0, `menu opened for a jailed player (windows ${jailedWindows}, clicks ${jailedClicks})`)
+    T.send(b, `/login ${PW}`)
+    await T.expect(b, L.msgAuthenticated)
+    await T.sleep(800)
+    T.assert(b.windows.length === 1, `after /login expected the menu to open once, got ${b.windows.length}`)
+    b._client.write('enchant_item', { windowId: b.windows[0], enchantment: 3 })
+    await T.sleep(500)
+    T.assert((await T.datestLog(NAME)).includes('button:cmd:3'), 'control: button click after /login did not reach the menu')
+
+    // Menú abierto por una mod al entrar
+    const NAME2 = fresh('MenuLogin')
+    b = await joinOk(NAME2, '127.0.0.114')
+    await T.expect(b, L.msgWelcome)
+    await T.sleep(800)
+    T.assert(b.windows.length === 0, 'menu opened at join reached the jailed player')
+    await T.sleep(400)
+    T.send(b, `/register ${PW}`)
+    await T.expect(b, L.msgRegistered)
+    await T.sleep(800)
+    T.assert(b.windows.length === 1, `after /register expected the join menu to open once, got ${b.windows.length}`)
+
+    // Menú de Forge (NetworkHooks.openScreen): no pasa por openMenu y llega por fml:play
+    const NAME3 = fresh('MenuHook')
+    const FORGE_MENU = 'fml:play#1'
+    b = await register(NAME3, '127.0.0.117')
+    await logout(b)
+    await T.rcon('datest clear')
+    b = await joinOk(NAME3, '127.0.0.117')
+    await T.expect(b, L.msgLoginRequest)
+    await T.sleep(500)
+    await T.rcon(`datest screenmenu ${NAME3} hook`)
+    await T.sleep(800)
+    for (let id = 1; id <= 3; id++) b._client.write('enchant_item', { windowId: id, enchantment: 3 })
+    await T.sleep(500)
+    const hookClicks = (await T.datestLog(NAME3)).filter((e) => e.startsWith('button:'))
+    T.assert(T.received(b, FORGE_MENU).length === 0 && hookClicks.length === 0,
+      `Forge menu opened for a jailed player (${T.received(b, FORGE_MENU).length} packets, clicks ${hookClicks})`)
+    T.send(b, `/login ${PW}`)
+    await T.expect(b, L.msgAuthenticated)
+    await T.sleep(800)
+    T.assert(T.received(b, FORGE_MENU).length === 1, `after /login expected the Forge menu to open once, got ${T.received(b, FORGE_MENU).length}`)
+    for (let id = 1; id <= 3; id++) b._client.write('enchant_item', { windowId: id, enchantment: 3 })
+    await T.sleep(500)
+    T.assert((await T.datestLog(NAME3)).includes('button:hook:3'), 'control: button click after /login did not reach the Forge menu')
+  })
+
+  await test('first-join teleports of other mods are kept, whether they run before or after DirectAuth', async () => {
+    const TP = [100.5, -60, 100.5]
+    for (const [NAME, IP] of [[fresh('TpFirstA'), '127.0.0.115'], [fresh('TpLastA'), '127.0.0.116']]) {
+      const b = await joinOk(NAME, IP)
+      await T.expect(b, L.msgWelcome)
+      await T.sleep(1500)
+      const jailed = await T.posOf(NAME)
+      T.assert(T.near(jailed, TP, 1.6), `${NAME}: jailed at ${jailed}, the mod had sent it to ${TP}`)
+      T.send(b, `/register ${PW}`)
+      await T.expect(b, L.msgRegistered)
+      await T.sleep(800)
+      const after = await T.posOf(NAME)
+      T.assert(T.near(after, TP, 1.6), `${NAME}: after /register at ${after}, expected ${TP}`)
+      await T.quit(b)
     }
   })
 

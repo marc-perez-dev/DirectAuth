@@ -15,8 +15,11 @@ SQLite database and the world files. Bots connect from different loopback addres
 - The first run downloads the Forge installer and installs the server in `runs/smoke-test/`
   (a few minutes).
 - Ports 25565 and 25575 free on `127.0.0.1`.
-- Internet access: the premium tests query the Mojang API and session server with the real
-  account name `Notch` (lookup only, nobody logs into that account).
+- Internet access: the premium tests query the Mojang API with the real account names `Notch` and
+  `jeb_` (lookup only, nobody logs into those accounts).
+- Port 25580 free on `127.0.0.1`: `lib.js` serves a fake Mojang session server there
+  (`premium()`), and `server.sh` points the server at it (`minecraft.api.session.host`), so bots
+  without a Mojang account can join as premium players.
 - The Minecraft EULA accepted for the test server. Read https://aka.ms/MinecraftEULA, then:
   `mkdir -p runs/smoke-test && echo eula=true > runs/smoke-test/eula.txt`
 
@@ -49,16 +52,41 @@ node tests.js 'lockout'   # regex on test names
 
 Tests assume a fresh world. When re-running a test against a world that already has its
 accounts, some tests take fresh names from the environment: `JAIL`, `JAIL_IP`, `DEAD`, `DEAD_IP`,
-`DEAD_IP2`, `NOBED`, `PICK`.
+`DEAD_IP2`, `NOBED`, `PICK`. The tests for other mods append `FRESH` to their names
+(`FRESH=2 node tests.js 'menus'`).
+
+## Other mods (test mod `directauth_test`)
+
+The smoke-test server also loads a small test mod, `src/testmod/` in this repo (built by
+`bash gradlew testmodJar` into `build/testmod/`, never in the DirectAuth jar). It stands in for
+other mods so the bots can check how DirectAuth treats them:
+
+- A `SimpleChannel`, `directauth_test:main`, that accepts vanilla clients, with four messages:
+  `action` (index 0) and `hello` (1) from the client, `screen` (2) and `data` (3) from the server.
+  DirectAuth calls them `directauth_test:main#0`…`#3`. Each carries one string.
+- A stand-in for Architectury's single channel, `architectury:network`: each message starts with its
+  own id (`directauth_test:claim`, `directauth_test:team`), then a string.
+- A chat listener that logs every message, even cancelled ones, like a mod that reads chat (MCA's
+  villager AI).
+- `/datest log <player>`: what the server received from that player (payloads, menu button clicks).
+- `/datest screen|data <player> <value>`, `/datest menu <player> <tag>`: send a payload or open a menu
+  from the server; `/datest screenmenu <player> <tag>` opens it with Forge's `NetworkHooks.openScreen`.
+- Players whose names start with `Scr` or `MenuLogin` get a screen payload or a menu when they
+  join; new players named `TpFirst…`/`TpLast…` are teleported to 100.5 -60 100.5 on their first join,
+  before or after DirectAuth's own join handler.
+
+`server.properties` enables command blocks so the tests can check that a jailed op impostor cannot
+rewrite them. `server.sh` points the server's session host to a fake session server in `lib.js`
+(`premium()`), so bots can join as premium accounts.
 
 ## Files
 
 | File | What it does |
 |---|---|
-| `tests.js` | Tests against a running server (registration, login, lockout, jail, respawn, sessions, admin commands, premium migration, legacy hashes, config, RCON, races). |
+| `tests.js` | Tests against a running server (registration, login, lockout, jail, respawn, sessions, admin commands, Online Mode, legacy hashes, config, RCON, races, other mods' packets and menus, vanilla op packets). |
 | `restart.js` | Phases that need restarts: shutdown with a `/login` in flight, positions surviving a restart, automatic database backup when upgrading an older schema, corrupt `positions.json`, legacy `DirectAuth_users.json` import, malformed config at startup, downgrade and re-upgrade, Turkish locale. |
-| `lib.js` | Helpers: bots, message expectations, RCON, SQLite, player state. |
-| `server.sh` | Installs Forge the first time (`./server.sh install`), copies the mod jar from `build/libs` into `runs/smoke-test/mods` and starts the production server without GUI, with the console read from the `console` FIFO. It tests the reobfuscated jar, not the dev environment: only there are the mixin refmap, the `MixinConfigs` manifest and the jar-in-jar SQLite driver exercised. |
+| `lib.js` | Helpers: bots, message expectations, RCON, SQLite, player state, test-mod payloads. |
+| `server.sh` | Installs Forge the first time (`./server.sh install`), copies the mod jar from `build/libs` (and the test mod from `build/testmod`) into `runs/smoke-test/mods` and starts the production server without GUI, with the console read from the `console` FIFO. It tests the reobfuscated jar, not the dev environment: only there are the mixin refmap, the `MixinConfigs` manifest and the jar-in-jar SQLite driver exercised. |
 | `common.sh`, `run-all.sh`, `restart-run.sh`, `up.sh`, `down.sh` | Orchestration. |
 
 `server.out` (current server log), `server-all.out` (all restarts of the last run) and
@@ -68,19 +96,18 @@ accounts, some tests take fresh names from the environment: `JAIL`, `JAIL_IP`, `
 
 Some tests provoke errors on purpose; `run-all.sh` prints them at the end:
 
-- `Failed migrating ... rolling back` and `AccessDeniedException` on `stats/`: the rollback test
-  makes `stats/` read-only.
-- `Could not read ... DirectAuth-config.json`, `Unknown migration mode`, `Could not read saved
+- `Could not read ... DirectAuth-config.json`, `Could not read saved
   positions`, `Skipping malformed legacy user entry`: the corrupt-file tests.
 - With `DOWNGRADE_REF`, whatever the previous version logs about the newer database (it is
   started on purpose against data written by this version).
 
 ## Not covered
 
-- Premium auto-login with a real paid account (needs a real Mojang session).
+- Premium auto-login against Mojang's real session server (the fake one answers like it).
 - Singleplayer / integrated server.
 - Mojang API unreachable (`errMojangUnavailable`).
-- Other mods (`FakePlayer` machines, real FTB Quests data; FTB files are simulated).
+- Real third-party mods (`FakePlayer` machines, real FTB Quests data; FTB files are simulated). The
+  test mod above simulates how other mods talk to the server.
 
 Mineflayer is a protocol client, not the vanilla client: for example it does not roll back a
 predicted block break when the server acknowledges the sequence, so tests do not rely on the

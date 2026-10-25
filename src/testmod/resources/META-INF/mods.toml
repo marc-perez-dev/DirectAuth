@@ -1,0 +1,19 @@
+# Mod de pruebas para el smoke test (tools/smoke-test). Se compila aparte (tarea testmodJar) y
+# nunca va en el jar de DirectAuth.
+modLoader="javafml"
+loaderVersion="[47,)"
+license="MIT"
+
+[[mods]]
+modId="directauth_test"
+version="1.0.0"
+displayName="DirectAuth smoke-test helpers"
+description='''Test-only helpers: a SimpleChannel that vanilla clients may skip, server-opened menus, first-join teleports and /datest commands.'''
+displayTest="IGNORE_SERVER_VERSION"
+
+[[dependencies.directauth_test]]
+    modId="forge"
+    mandatory=true
+    versionRange="[47,)"
+    ordering="NONE"
+    side="BOTH"

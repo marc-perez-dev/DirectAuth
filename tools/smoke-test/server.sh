@@ -15,8 +15,13 @@ ARGS="libraries/net/minecraftforge/forge/$FORGE/unix_args.txt"
 JAVA="${JAVA17:-$(ls -d "$HOME"/.gradle/jdks/*-17-*/ 2>/dev/null | grep -v '\.lock' | head -1)bin/java}"
 
 [ -x "$JAVA" ] || { echo "Java 17 not found: set JAVA17=/path/to/java"; exit 1; }
-JARS=("$SRC"/build/libs/directauth-*.jar)
-[ ${#JARS[@]} -eq 1 ] && [ -f "${JARS[0]}" ] || { echo "Expected one jar in $SRC/build/libs: run 'bash gradlew build' in $SRC"; exit 1; }
+# El jar de la versión de ese checkout (build/libs puede tener los de otras versiones y loaders)
+VERSION=$(sed -n 's/^mod_version=//p' "$SRC/gradle.properties")
+JARS=("$SRC"/build/libs/directauth-forge-*-"$VERSION".jar "$SRC"/build/libs/directauth-"$VERSION".jar)
+JARS=($(ls "${JARS[@]}" 2>/dev/null))
+[ ${#JARS[@]} -eq 1 ] || { echo "Expected one DirectAuth $VERSION jar in $SRC/build/libs: run 'bash gradlew build testmodJar' in $SRC"; exit 1; }
+# Mod de pruebas (src/testmod, tarea testmodJar); las versiones anteriores no lo tienen
+TESTMOD=("$SRC"/build/testmod/directauth_test-*.jar)
 mkdir -p "$GAME"
 if ! grep -q '^eula=true' "$GAME/eula.txt" 2>/dev/null; then
   echo "Read the Minecraft EULA (https://aka.ms/MinecraftEULA) and accept it with:"
@@ -39,11 +44,17 @@ cp "$HERE/server.properties" "$GAME/server.properties"
 mkdir -p "$GAME/mods"
 rm -f "$GAME"/mods/directauth*.jar
 cp "${JARS[0]}" "$GAME/mods/"
+[ -f "${TESTMOD[0]}" ] && cp "${TESTMOD[0]}" "$GAME/mods/"
 
 rm -f "$HERE/console"
 mkfifo "$HERE/console"
 # Mantener la FIFO abierta para escritura para que el servidor no reciba EOF en la consola
 exec 3<>"$HERE/console"
 cd "$GAME" || exit 1
-# Propiedad marcadora para encontrar el proceso (pgrep) sin confundirlo con otro servidor
-exec "$JAVA" -Ddirectauth.smoketest=true -Xmx2G "@$ARGS" nogui < "$HERE/console"
+# Propiedad marcadora para encontrar el proceso (pgrep) sin confundirlo con otro servidor, y el
+# servidor de sesión falso de lib.js (premium()) en lugar del de Mojang (authlib 4 solo acepta
+# los hosts si se dan auth, account y session; el resto sigue apuntando a Mojang)
+exec "$JAVA" -Ddirectauth.smoketest=true -Xmx2G \
+  -Dminecraft.api.auth.host=https://authserver.mojang.com -Dminecraft.api.account.host=https://api.mojang.com \
+  -Dminecraft.api.session.host=http://127.0.0.1:25580 -Dminecraft.api.services.host=https://api.minecraftservices.com \
+  "@$ARGS" nogui < "$HERE/console"

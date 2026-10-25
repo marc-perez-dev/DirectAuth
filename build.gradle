@@ -94,6 +94,32 @@ legacyForge {
     }
 }
 
+// Mod de pruebas del smoke test (tools/smoke-test): un jar aparte, reobfuscado como el de
+// DirectAuth, que server.sh copia junto a él. Solo lo compila "testmodJar"; "build" no.
+sourceSets {
+    testmod
+}
+legacyForge.addModdingDependenciesTo(sourceSets.testmod)
+
+def testmodDevJar = tasks.register('testmodDevJar', Jar) {
+    from sourceSets.testmod.output
+    archiveBaseName = 'directauth_test'
+    archiveVersion = '1.0.0'
+    destinationDirectory = layout.buildDirectory.dir('testmod-dev')
+}
+// Como reobfJar, pero sin obfuscation.reobfuscate(), que añadiría el jar a la publicación
+def reobfTestmodJar = tasks.register('reobfTestmodJar', net.neoforged.moddevgradle.legacyforge.tasks.RemapJar) {
+    input = testmodDevJar.flatMap { it.archiveFile }
+    libraries.from(sourceSets.testmod.compileClasspath)
+    obfuscation.configureNamedToSrgOperation(remapOperation)
+    archiveBaseName = 'directauth_test'
+    archiveVersion = '1.0.0'
+    destinationDirectory = layout.buildDirectory.dir('testmod')
+}
+tasks.register('testmodJar') {
+    dependsOn reobfTestmodJar
+}
+
 mixin {
     add sourceSets.main, "${mod_id}.refmap.json"
     config "${mod_id}.mixins.json"

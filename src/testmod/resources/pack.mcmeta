@@ -1,0 +1,6 @@
+{
+  "pack": {
+    "description": "DirectAuth smoke-test helpers",
+    "pack_format": 15
+  }
+}

@@ -1,5 +1,6 @@
 // Helpers para los smoke tests de DirectAuth: bots Mineflayer, RCON, SQLite y ficheros del mundo
 const net = require('net')
+const http = require('http')
 const fs = require('fs')
 const path = require('path')
 const mineflayer = require('mineflayer')
@@ -65,16 +66,29 @@ function join (username, ip = '127.0.0.1', { timeout = 20000, options = {} } = {
       ...options
     })
     bot.ip = ip
+    bot.logOffset = serverLogSize()
     bot.msgs = []
     bot.mark = 0
     bot.kickReason = null
     bot.connected = true
     bot.spawned = false
     bots.add(bot)
+    bot.payloads = []
+    bot.windows = []
+    bot.playerInfo = []
+    bot._client.on('custom_payload', (p) => {
+      // SimpleChannel: el primer byte es el índice del mensaje (ver sendPayload)
+      if (p.channel === TEST_CHANNEL) bot.payloads.push({ channel: `${p.channel}#${p.data[0]}`, value: readString(p.data.subarray(1)) })
+      // Mensajes de Forge (fml:play#1: menú abierto con NetworkHooks.openScreen)
+      if (p.channel === 'fml:play') bot.payloads.push({ channel: `${p.channel}#${p.data[0]}`, value: '' })
+    })
+    bot._client.on('open_window', (p) => bot.windows.push(p.windowId))
+    bot._client.on('player_info', (p) => bot.playerInfo.push(p))
     bot.on('message', (m) => bot.msgs.push(strip(m.toString())))
     bot.on('kicked', (reason) => { bot.kickReason = textOf(reason) })
-    bot.on('error', () => {})
-    bot.on('end', () => { bot.connected = false; bots.delete(bot) })
+    // Se guardan para explicar una desconexión sin motivo (ver expectKick)
+    bot.on('error', (e) => { bot.lastError = e })
+    bot.on('end', (reason) => { bot.connected = false; bot.endReason = reason; bots.delete(bot) })
     const timer = setTimeout(() => reject(new Error(`${username}: no spawn in ${timeout}ms`)), timeout)
     bot.once('spawn', () => { bot.spawned = true; clearTimeout(timer); resolve(bot) })
     // Un jugador que entra muerto no recibe 'spawn' hasta reaparecer
@@ -84,6 +98,38 @@ function join (username, ip = '127.0.0.1', { timeout = 20000, options = {} } = {
     bot._client.on('update_health', (p) => { if (p.health <= 0) { bot.health = 0; onDead() } })
     bot.once('end', () => { clearTimeout(timer); resolve(bot) })
   })
+}
+
+// --- Paquetes de mods (mod directauth_test, ver src/testmod) ---
+// Los mensajes de prueba van por un SimpleChannel: índice del mensaje en el primer byte y un
+// String con la codificación de FriendlyByteBuf.writeUtf. DirectAuth los llama "canal#índice".
+const TEST_CHANNEL = 'directauth_test:main'
+function writeString (s) {
+  const body = Buffer.from(s, 'utf8')
+  const len = []
+  let n = body.length
+  do { let b = n & 0x7f; n >>>= 7; if (n) b |= 0x80; len.push(b) } while (n)
+  return Buffer.concat([Buffer.from(len), body])
+}
+function readString (buf) {
+  let n = 0; let shift = 0; let i = 0
+  for (;;) { const b = buf[i++]; n |= (b & 0x7f) << shift; if (!(b & 0x80)) break; shift += 7 }
+  return buf.slice(i, i + n).toString('utf8')
+}
+/** Envía al servidor un payload de mod (como lo haría el cliente de otra mod), p. ej. 'directauth_test:main#0'. */
+function sendPayload (bot, type, value) {
+  const [channel, index] = type.split('#')
+  // Architectury: el id del mensaje va dentro, como texto (architectury:network#directauth_test:x)
+  const head = channel === 'architectury:network' ? writeString(index) : Buffer.from([Number(index)])
+  bot._client.write('custom_payload', { channel, data: Buffer.concat([head, writeString(value)]) })
+}
+/** Valores recibidos de un tipo de prueba (p. ej. 'directauth_test:main#2') o de Forge ('fml:play#1'). */
+const received = (bot, channel) => bot.payloads.filter((p) => p.channel === channel).map((p) => p.value)
+/** Lo que el mod de pruebas anotó para un jugador: ['action:a1', 'hello:x', 'button:tag:3', ...] */
+async function datestLog (name) {
+  const r = await rcon(`datest log ${name}`)
+  const m = r.match(/\[(.*)\]\s*$/s)
+  return m && m[1] ? m[1].split(',') : []
 }
 
 /** Envía un comando o mensaje y marca el punto desde el que se esperan respuestas. */
@@ -117,8 +163,25 @@ async function expectKick (bot, pattern, timeout = 6000) {
   const start = Date.now()
   while (bot.connected && Date.now() - start < timeout) await sleep(50)
   if (bot.connected) throw new Error(`${bot.username}: expected kick ${rx}, still connected`)
-  if (!rx.test(bot.kickReason || '')) throw new Error(`${bot.username}: kick reason "${bot.kickReason}" does not match ${rx}`)
+  // Si el servidor cierra mientras el bot aún le envía paquetes (un kick justo al entrar), el
+  // cierre llega como reset y Linux descarta lo recibido sin leer, el paquete del kick incluido:
+  // entonces cuenta el motivo con el que el servidor lo echó, según su log
+  if (!bot.kickReason && ['ECONNRESET', 'EPIPE'].includes(bot.lastError?.code)) bot.kickReason = await kickReasonInLog(bot)
+  if (!rx.test(bot.kickReason || '')) throw new Error(`${bot.username}: kick reason "${bot.kickReason}" does not match ${rx} (end: ${bot.endReason}, error: ${bot.lastError})`)
   return bot.kickReason
+}
+
+async function kickReasonInLog (bot) {
+  const name = bot.username.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  // "<nombre> lost connection: …" en juego; en el login, el GameProfile (…name=<nombre>…) y la IP
+  const rx = new RegExp(`\\]: [^\\n]*?\\b${name}\\b[^\\n]*? lost connection: ([\\s\\S]*?)(?=\\n\\[|$)`, 'g')
+  for (let i = 0; i < 20; i++) {
+    // Si el servidor se reinició después de entrar el bot, el log empieza de nuevo
+    const found = [...serverLogSince(bot.logOffset > serverLogSize() ? 0 : bot.logOffset).matchAll(rx)].pop()
+    if (found) return found[1].trim()
+    await sleep(100)
+  }
+  return null
 }
 
 async function expectConnected (bot, ms = 1000) {
@@ -147,6 +210,30 @@ async function rcon (cmd) {
   return strip(await rconClient.send(cmd))
 }
 async function closeRcon () { if (rconClient) await rconClient.end().catch(() => {}); rconClient = null }
+
+// --- Servidor de sesión de Mojang falso (server.sh le pasa al servidor minecraft.api.session.host) ---
+// Responde a hasJoined como Mojang para los nombres dados con premium(): así un bot sin cuenta
+// entra como premium. El resto recibe 204, como un cliente que no ha entrado con su cuenta.
+const SESSION_PORT = 25580
+const premiumProfiles = new Map()
+let sessionServer = null
+/** El próximo login de {@code name} lo confirma Mojang con esta UUID. Devuelve la skin que llevará. */
+async function premium (name, id) {
+  const textures = Buffer.from(JSON.stringify({ timestamp: Date.now(), profileId: id.replace(/-/g, ''), profileName: name, textures: {} })).toString('base64')
+  premiumProfiles.set(name.toLowerCase(), { id: id.replace(/-/g, ''), name, properties: [{ name: 'textures', value: textures }] })
+  if (!sessionServer) {
+    sessionServer = http.createServer((req, res) => {
+      const url = new URL(req.url, 'http://localhost')
+      const profile = url.pathname === '/session/minecraft/hasJoined' && premiumProfiles.get(String(url.searchParams.get('username')).toLowerCase())
+      res.writeHead(profile ? 200 : 204, { 'content-type': 'application/json' })
+      res.end(profile ? JSON.stringify(profile) : undefined)
+    })
+    await new Promise((resolve, reject) => sessionServer.once('error', reject).listen(SESSION_PORT, '127.0.0.1', resolve))
+    sessionServer.unref()
+  }
+  return textures
+}
+const notPremium = (name) => premiumProfiles.delete(name.toLowerCase())
 
 // --- SQLite (solo lectura salvo que se pida) ---
 function db (sql, params = [], { write = false } = {}) {
@@ -186,16 +273,22 @@ const serverLogSize = () => fs.statSync(SERVER_LOG).size
 
 // --- Runner ---
 const results = []
+// Una prueba atascada (un bot que espera algo que no llega) falla en vez de colgar la batería
+const TEST_TIMEOUT = 180000
 async function test (name, fn) {
   const t0 = Date.now()
+  let timer
   try {
-    await fn()
+    await Promise.race([fn(), new Promise((resolve, reject) => {
+      timer = setTimeout(() => reject(new Error(`timed out after ${TEST_TIMEOUT / 1000}s`)), TEST_TIMEOUT)
+    })])
     results.push({ name, ok: true })
     console.log(`PASS  ${name} (${Date.now() - t0}ms)`)
   } catch (e) {
     results.push({ name, ok: false, error: e.message })
     console.log(`FAIL  ${name}: ${e.message}`)
   } finally {
+    clearTimeout(timer)
     await quitAll()
   }
 }
@@ -244,5 +337,6 @@ function near (a, b, tol = 1.5) {
 module.exports = {
   RUN, WORLD, CFG_DIR, sleep, strip, lang, re, join, send, expect, expectNo, expectKick, expectConnected,
   quit, quitAll, rcon, closeRcon, db, user, readConfig, setConfig, offlineUUID, serverLogSince, serverLogSize,
-  test, summary, assert, posOf, dimOf, countItem, near, verifiesLikeOldVersions, schemaVersion, dbBackups
+  test, summary, assert, posOf, dimOf, countItem, near, verifiesLikeOldVersions, schemaVersion, dbBackups,
+  sendPayload, received, datestLog, premium, notPremium
 }
