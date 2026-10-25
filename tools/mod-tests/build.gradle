@@ -1,0 +1,57 @@
+plugins {
+    id 'java-library'
+    id 'net.neoforged.moddev.legacyforge' version '2.0.121'
+}
+
+version = '1.0.0'
+group = 'com.marcp.directauth.modtests'
+base {
+    archivesName = 'directauth_modtests'
+}
+java.toolchain.languageVersion = JavaLanguageVersion.of(17)
+
+legacyForge {
+    version = "1.20.1-${project.forge_version}"
+
+    mods {
+        directauth_modtests {
+            sourceSet(sourceSets.main)
+        }
+    }
+}
+
+// Las mods de producción usan nombres SRG y el arnés se compila con los de Mojang (y se reobfusca
+// con reobfJar). run.js descarga las mods en build/mod-cache (y sus jar-in-jar en nested/) y esta
+// tarea las remapea a build/mod-cache-named, solo para compilar contra ellas.
+def modCache = file('build/mod-cache')
+def namedCache = layout.buildDirectory.dir('mod-cache-named')
+def remapTasks = []
+[modCache, new File(modCache, 'nested')].each { dir ->
+    (dir.listFiles() ?: []).findAll { it.name.endsWith('.jar') }.sort().each { jar ->
+        def nested = dir != modCache
+        remapTasks << tasks.register("remapMod_${jar.name.replaceAll('[^A-Za-z0-9]', '_')}", net.neoforged.moddevgradle.legacyforge.tasks.RemapJar) {
+            input = jar
+            // Minecraft y las mods originales (para la herencia entre mods), no lo ya remapeado
+            libraries.from(configurations.compileClasspath.filter { !it.path.contains('mod-cache-named') })
+            libraries.from(fileTree(dir: modCache, include: ['*.jar', 'nested/*.jar']))
+            obfuscation.configureSrgToNamedOperation(remapOperation)
+            archiveFileName = jar.name
+            destinationDirectory = nested ? namedCache.map { it.dir('nested') } : namedCache
+        }
+    }
+}
+tasks.register('remapMods') {
+    dependsOn remapTasks
+}
+
+dependencies {
+    // APIs de las mods probadas: los jars remapeados y sus jar-in-jar, solo para compilar
+    compileOnly fileTree(dir: 'build/mod-cache-named', include: ['*.jar', 'nested/*.jar'])
+}
+tasks.named('compileJava') {
+    dependsOn 'remapMods'
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+}

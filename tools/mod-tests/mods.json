@@ -1,0 +1,275 @@
+{
+  "mods": {
+    "origins": {
+      "file": "origins-forge-1.20.1-1.10.0.9-all.jar",
+      "url": "https://cdn.modrinth.com/data/jl3m2lR9/versions/vynFXywM/origins-forge-1.20.1-1.10.0.9-all.jar",
+      "sha512": "b103ac2ac509e98eaceedf04891bbe302e82f8b4a7fc3790b3d63bd912306bb09f9925489473211627a7a87d2049672a3e66c5cf6f5b1e34e62049f3a43d0e5d",
+      "side": "both",
+      "requires": [
+        "caelus"
+      ]
+    },
+    "caelus": {
+      "file": "caelus-forge-3.2.0+1.20.1.jar",
+      "url": "https://cdn.modrinth.com/data/40FYwb4z/versions/mRry0DgY/caelus-forge-3.2.0%2B1.20.1.jar",
+      "sha512": "906baad404c33288d8daf8937bc6a85d3bcc03db67a4a68395b8f01eea57f773420ff97919aadb08a7618b62b0c6c3db72270f9c3af836b822385464f509cf78",
+      "side": "both"
+    },
+    "minecraft-comes-alive-reborn": {
+      "file": "minecraft-comes-alive-7.6.26+1.20.1-universal.jar",
+      "url": "https://cdn.modrinth.com/data/1W98a849/versions/7syRW46i/minecraft-comes-alive-7.6.26%2B1.20.1-universal.jar",
+      "sha512": "8b42fd3e54b4b535a95807b469221d228a6e99a61e7049dd58b720163aa4627822dea320e21c60b59ca00cd2e51ee18bfde87daea6697998010beb88cdf54a5e",
+      "side": "both",
+      "requires": [
+        "architectury-api"
+      ]
+    },
+    "architectury-api": {
+      "file": "architectury-9.2.14-forge.jar",
+      "url": "https://cdn.modrinth.com/data/lhGA9TYQ/versions/1MKTLiiG/architectury-9.2.14-forge.jar",
+      "sha512": "cf67f2050cafa00f0bee42e6d7bef77fdb808ac4f71742f7b4d6d5c1e6ffb49561a5a252f332d2b78a9767bdb5faa284611790dba303fbdc736ae36d794f61c7",
+      "side": "both"
+    },
+    "pixelmon": {
+      "file": "Pixelmon-1.20.1-9.2.3-universal.jar",
+      "url": "https://cdn.modrinth.com/data/59ZceYlU/versions/KjmzoXMR/Pixelmon-1.20.1-9.2.3-universal.jar",
+      "sha512": "3a9c6f375214c6d93c6cce8235e8a206e8f9731be8e168a254e78539087080796d97f0b22cb9a6db09d901c72e2e1ae53b9f2484761fb310479ce9f84ac9b145",
+      "side": "both"
+    },
+    "cobblemon": {
+      "file": "Cobblemon-forge-1.5.2+1.20.1.jar",
+      "url": "https://cdn.modrinth.com/data/MdwFAVRL/versions/vm5zUZAg/Cobblemon-forge-1.5.2%2B1.20.1.jar",
+      "sha512": "e92b572b08d425c95c90a71375500bf555cfe709d7d38d57248e34bb37d04ceb6cf7c3a2ba301c182b9c7541491a2e7141987ae8ebf843f78c77c8dc9271d6f4",
+      "side": "both",
+      "requires": [
+        "kotlin-for-forge"
+      ]
+    },
+    "kotlin-for-forge": {
+      "file": "kotlinforforge-4.12.0-all.jar",
+      "url": "https://cdn.modrinth.com/data/ordsPcFz/versions/Zsh14XeQ/kotlinforforge-4.12.0-all.jar",
+      "sha512": "767f40030ed4b370a3838fa65ae1b79974f31979342fff7cc834a0d5f39eb28612642519352ff2a1dd5226ce1f745f8b3156ee3625ffde01219137d064c1ee40",
+      "side": "both"
+    },
+    "vampirism": {
+      "file": "Vampirism-1.20.1-1.10.17.jar",
+      "url": "https://cdn.modrinth.com/data/jVZ0F1wn/versions/yg8B0dzt/Vampirism-1.20.1-1.10.17.jar",
+      "sha512": "d00858ca081a3856f0d8fe0a1ad614bfe977809532054e94eb17b7885fbfc7fa3d790924636adf49f9d09a53bca2b1fa449d65699ab803e668b5272a76a83e3f",
+      "side": "both"
+    },
+    "werewolves": {
+      "file": "Werewolves-1.20.1-2.0.2.7.jar",
+      "url": "https://cdn.modrinth.com/data/3ElBohKg/versions/BqwSKnfY/Werewolves-1.20.1-2.0.2.7.jar",
+      "sha512": "7347e7561e1159c7af97a30c4c2a8d5a3498f14690f45a2e358529cb757a92d41672916366d57b41679d7420a8c4f63ad9894835f1e8a0d196bc85afe13980c0",
+      "side": "both",
+      "requires": [
+        "vampirism"
+      ]
+    },
+    "epic-fight": {
+      "file": "epic-fight-20.14.17-mc1.20.1-forge.jar",
+      "url": "https://cdn.modrinth.com/data/vu3NZ5Ma/versions/KEBfkBat/epic-fight-20.14.17-mc1.20.1-forge.jar",
+      "sha512": "cfb8ab5c6f2014ce10dae59947f9f4e35e7bbe88c2ffbb66da9bfe78876d7a0a65de843a62e324971d5a923ec6e96d9b7e5c72248a262a6e220a071c6d05a8cf",
+      "side": "both"
+    },
+    "simple-voice-chat": {
+      "file": "voicechat-forge-1.20.1-2.6.22.jar",
+      "url": "https://cdn.modrinth.com/data/9eGKb6K1/versions/S11m0QIb/voicechat-forge-1.20.1-2.6.22.jar",
+      "sha512": "23c8b3a593fe506af8d8e0edc0afb45349777d5cdea41ffc3fa99afc2e3b9bc7770bb9951f674017ea5b3c23e111b0c6031ebd61820c9a0b5191e3992d9c8798",
+      "side": "both"
+    },
+    "aether": {
+      "file": "aether-1.20.1-1.5.2-neoforge.jar",
+      "url": "https://cdn.modrinth.com/data/YhmgMVyu/versions/2411kUqF/aether-1.20.1-1.5.2-neoforge.jar",
+      "sha512": "60b23e439b244645eafda5f3ddd620ac37e94bd75441d2deea9c328e1e154362f48b08aff1959849a7428ae7664422723fdbdb12aaeddfd56409ba4b54a7eaaf",
+      "side": "both"
+    },
+    "skyblock-builder": {
+      "file": "SkyblockBuilder-1.20.1-5.1.33.jar",
+      "url": "https://cdn.modrinth.com/data/por2AZc5/versions/Cf9Mrd4W/SkyblockBuilder-1.20.1-5.1.33.jar",
+      "sha512": "6c9de1a58d16637c0a913fe9493e111b346bfe853432322caf180e33eb59741435b34b94ced69bb42fbd0a73b83cdc07f269d6bfdc015d3a67158466ade94aae",
+      "side": "both",
+      "requires": [
+        "libx"
+      ]
+    },
+    "libx": {
+      "file": "LibX-1.20.1-5.0.12.jar",
+      "url": "https://cdn.modrinth.com/data/qEH6GYul/versions/Lc0q4GAj/LibX-1.20.1-5.0.12.jar",
+      "sha512": "266d59d4c48c62c06a1e3d5a7a964ccdacdb07bec5d3523e69c6a7391c223bf52a9db8a792bb0b4cd0d463bc4dc45d1e187572b7f38a241d3661e127f8befd82",
+      "side": "both"
+    },
+    "welcome-screen": {
+      "file": "welcomescreen-forge-1.0.0-1.20.1.jar",
+      "url": "https://cdn.modrinth.com/data/EzQkPElf/versions/WU3Oty8Q/welcomescreen-forge-1.0.0-1.20.1.jar",
+      "sha512": "6840958a22509f0f6966c630a0480869b25a295ee7b456ceb720baf8c52d511ef4f9877aff855dd0b5428afb7018a939b5e60493811665b1da8fc71a2b0c04e3",
+      "side": "client",
+      "requires": [
+        "necronomicon",
+        "fancymenu"
+      ]
+    },
+    "necronomicon": {
+      "file": "Necronomicon-Forge-1.6.0+1.20.1.jar",
+      "url": "https://cdn.modrinth.com/data/P1Kv5EAO/versions/AomMq7HP/Necronomicon-Forge-1.6.0%2B1.20.1.jar",
+      "sha512": "d63d8d3e252197b7cabffc10ba6ec718d03b0038345d40dc5c9ce3014b9e542a35760ab0250f179b3de4183fe34784d645157b34bf54648c0ebbe24604ed5ba7",
+      "side": "client"
+    },
+    "fancymenu": {
+      "file": "fancymenu_forge_3.9.14_MC_1.20.1.jar",
+      "url": "https://cdn.modrinth.com/data/Wq5SjeWM/versions/2mNmkn9s/fancymenu_forge_3.9.14_MC_1.20.1.jar",
+      "sha512": "8adae8debaad30910495b492a447cc7b46e841bda4fe0481ca80609d38ee55b0805227abb088af8c6b180ae42695f96c6633cb2443f322925983462fe2ace6fa",
+      "side": "client",
+      "requires": [
+        "melody",
+        "konkrete"
+      ]
+    },
+    "melody": {
+      "file": "melody_forge_1.0.3_MC_1.20.1-1.20.4.jar",
+      "url": "https://cdn.modrinth.com/data/CVT4pFB2/versions/lJlW5r8R/melody_forge_1.0.3_MC_1.20.1-1.20.4.jar",
+      "sha512": "43c60d0cb98b1642d663e3cea68d50c01e9be82361851bf40c5c869e6593499aaf4b410d891d07a083f3c4b2df7fc06b2f8fbaa3c661a5061d46e250c017d30f",
+      "side": "client"
+    },
+    "konkrete": {
+      "file": "konkrete_forge_1.8.0_MC_1.20-1.20.1.jar",
+      "url": "https://cdn.modrinth.com/data/J81TRJWm/versions/skYziQQL/konkrete_forge_1.8.0_MC_1.20-1.20.1.jar",
+      "sha512": "df79a0c64da14ca2b27dc04a72d85ce5c8e7c498e7b72da4d7bfddd592bb4bac165e70afe33fac97446e4996fffd8003350df07ede2a77233dddec77b8ff0ee7",
+      "side": "client"
+    },
+    "starter-kit": {
+      "file": "starterkit-1.20.1-9.0.jar",
+      "url": "https://cdn.modrinth.com/data/6L3ydNi8/versions/KZCNS3I0/starterkit-1.20.1-9.0.jar",
+      "sha512": "1e950ba648cb89a88d53706b3b7a35457733478818cebae3e8c37d4a18cfaeb2a280a2324735537b6efafdb5f4380a3e7529ca2b6f4242f81fa45aba2c78e273",
+      "side": "both",
+      "requires": [
+        "collective"
+      ]
+    },
+    "collective": {
+      "file": "collective-1.20.1-8.65.jar",
+      "url": "https://cdn.modrinth.com/data/e0M1UDsY/versions/SO4XI0Wn/collective-1.20.1-8.65.jar",
+      "sha512": "e2c0a8fe3b4dd0f7d98909d02626de31258477e613c78a6fc30fd2f8ff8e400b0e6d97a7409eb639217f75b062859660bab8c252c56182fb6cd66096f9122a38",
+      "side": "both"
+    },
+    "female-gender": {
+      "file": "Female-Gender-Mod-forge-1.20.1-3.1.jar",
+      "url": "https://cdn.modrinth.com/data/bcOsQHnC/versions/R1d8TWqL/Female-Gender-Mod-forge-1.20.1-3.1.jar",
+      "sha512": "7b6b531e5e4966ce3fefbde17636a9d866c1d36b335450fbf5cf17918b882c337c02dabe2ace1e44614c09908426e6dff27c924c9958542670e312b960987a58",
+      "side": "both"
+    }
+  },
+  "scenarios": {
+    "baseline": {
+      "mods": []
+    },
+    "origins": {
+      "mods": [
+        "origins"
+      ]
+    },
+    "mca": {
+      "mods": [
+        "minecraft-comes-alive-reborn"
+      ]
+    },
+    "pixelmon": {
+      "mods": [
+        "pixelmon"
+      ],
+      "firstBoot": [
+        {
+          "replace": "config/pixelmon/spawning.yml",
+          "from": "entities-per-player: \\d+",
+          "to": "entities-per-player: 0"
+        },
+        {
+          "replace": "config/pixelmon/spawning.yml",
+          "from": "allow-legendary-spawn: true",
+          "to": "allow-legendary-spawn: false"
+        }
+      ],
+      "serverMemory": "3G",
+      "clientMemory": "3G"
+    },
+    "cobblemon": {
+      "mods": [
+        "cobblemon"
+      ]
+    },
+    "vampirism": {
+      "mods": [
+        "vampirism"
+      ]
+    },
+    "werewolves": {
+      "mods": [
+        "werewolves"
+      ]
+    },
+    "epic-fight": {
+      "mods": [
+        "epic-fight"
+      ]
+    },
+    "voicechat": {
+      "mods": [
+        "simple-voice-chat"
+      ]
+    },
+    "aether": {
+      "mods": [
+        "aether"
+      ],
+      "serverFiles": {
+        "defaultconfigs/aether-server.toml": "[Modpack]\n\t\"Spawns the player in the Aether\" = true\n"
+      },
+      "_comment": "Mundo normal: Aether busca el punto de aparición inicial a la altura que el jugador tiene en el Overworld, y en el mundo plano (y=-60) cae por debajo del Aether y vuelve al Overworld, con o sin DirectAuth.",
+      "serverProperties": {
+        "level-type": "minecraft\\:normal",
+        "level-seed": "directauth"
+      }
+    },
+    "skyblock-builder": {
+      "mods": [
+        "skyblock-builder"
+      ],
+      "serverProperties": {
+        "level-type": "skyblockbuilder\\:skyblock"
+      }
+    },
+    "welcome-screen": {
+      "mods": [
+        "welcome-screen"
+      ],
+      "clientFiles": {
+        "config/fancymenu/custom_gui_screens.txt": "type = custom_gui_screens\n\noverridden_screens {\n}\n\ncustom_gui {\n  identifier = welcomescreen_welcome\n  title = \n  allow_esc = true\n  transparent_world_background = true\n  transparent_world_background_overlay = false\n  pause_game = true\n}\n"
+      }
+    },
+    "starter-kit": {
+      "mods": [
+        "starter-kit"
+      ],
+      "firstBoot": [
+        {
+          "replace": "config/serilum/starterkit.json",
+          "from": "(\"randomizeMultipleKitsToggle\": \\{\\s*\"//\": \"[^\"]*\",\\s*\"value\": )true",
+          "to": "$1false"
+        },
+        {
+          "copy": "config/serilum/starterkit/kits/inactive/Archer.txt",
+          "to": "config/serilum/starterkit/kits/Archer.txt"
+        },
+        {
+          "delete": "world"
+        }
+      ],
+      "_comment": "Dos kits para elegir (Default y Archer): el servidor pregunta al cliente si tiene la mod y le abre la pantalla de elegir kit."
+    },
+    "female-gender": {
+      "mods": [
+        "female-gender"
+      ]
+    }
+  }
+}

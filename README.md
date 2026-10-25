@@ -116,6 +116,8 @@ If another mod opens a screen at first join that hides the chat:
 
 Screens that only exist on the client (for example Welcome Screen) never reach the server. They usually close with Esc; if not, raise `loginTimeout`.
 
+These mods are tested with a real client before each release: Origins, MCA Reborn, Pixelmon, Cobblemon, Vampirism, Werewolves, Epic Fight, Simple Voice Chat, The Aether, Skyblock Builder, Welcome Screen, Starter Kit and Female Gender.
+
 ## Compatibility
 
 * **Loader**: Forge 1.20.1 (47.x), Java 17
