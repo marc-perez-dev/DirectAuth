@@ -4,6 +4,7 @@ import java.io.DataInputStream;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.net.Socket;
+import java.net.SocketTimeoutException;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
@@ -26,18 +27,26 @@ public final class Rcon implements AutoCloseable {
     }
 
     /**
-     * El servidor parte las respuestas de más de 4096 bytes en varios paquetes con el mismo id: tras
-     * el comando se envía otro vacío, y todo lo que llega antes de su respuesta es del comando.
+     * El servidor parte las respuestas en trozos de 4096 bytes con el mismo id: mientras llega un
+     * trozo lleno puede venir otro. No se puede enviar nada más detrás del comando: el servidor lee
+     * cada paquete de una vez y cierra la conexión si en esa lectura llegan dos.
      */
     public synchronized String command(String command) throws IOException {
         int id = send(COMMAND, command);
-        int end = send(COMMAND, "");
         StringBuilder body = new StringBuilder();
+        Packet p = readPacket();
         for (;;) {
-            Packet p = readPacket();
-            if (p.id == end) break;
             if (p.id != id) throw new IOException("RCON reply out of order");
             body.append(p.body);
+            if (p.body.getBytes(StandardCharsets.UTF_8).length < 4096) break;
+            socket.setSoTimeout(500); // respuesta de exactamente 4096 bytes: no viene nada más
+            try {
+                p = readPacket();
+            } catch (SocketTimeoutException e) {
+                break;
+            } finally {
+                socket.setSoTimeout(30_000);
+            }
         }
         return body.toString().replaceAll("§.", "");
     }

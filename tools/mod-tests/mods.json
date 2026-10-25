@@ -329,7 +329,11 @@
       "serverFiles": {
         "defaultconfigs/aether-server.toml": "[Modpack]\n\t\"Spawns the player in the Aether\" = true\n"
       },
-      "_comment": "El cliente usa una copia de Aether sin el mixin EntityRenderersMixin de Accessories (clientPatch en la mod): apunta a una lambda de Minecraft por su nombre sint\u00e9tico, que en el Minecraft recompilado del entorno de desarrollo es otro. No afecta a lo que se prueba."
+      "_comment": "Mundo normal: Aether busca el punto de aparici\u00f3n inicial a la altura que el jugador tiene en el Overworld, y en el mundo plano (y=-60) cae por debajo del Aether y vuelve al Overworld, con o sin DirectAuth. El cliente usa una copia de Aether sin el mixin EntityRenderersMixin de Accessories (clientPatch en la mod): apunta a una lambda de Minecraft por su nombre sint\u00e9tico, que en el Minecraft recompilado del entorno de desarrollo es otro. No afecta a lo que se prueba.",
+      "serverProperties": {
+        "level-type": "minecraft\\:normal",
+        "level-seed": "directauth"
+      }
     },
     "skyblock-builder": {
       "mods": [
