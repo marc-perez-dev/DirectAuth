@@ -2,6 +2,7 @@ package com.marcp.directauth.network;
 
 import com.marcp.directauth.DirectAuth;
 import com.marcp.directauth.events.PlayerRestrictionHandler;
+import com.marcp.directauth.mixin.ClientboundCustomPayloadPacketAccessor;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.network.PacketSendListener;
 import net.minecraft.network.protocol.Packet;
@@ -43,6 +44,13 @@ public final class JailTraffic {
     private static final Map<ResourceLocation, Integer> INDEXED_CHANNELS = new ConcurrentHashMap<>();
     /** Canal único de Architectury: cada mensaje empieza por su propio id (FTB Quests, FTB Teams, KubeJS...). */
     private static final ResourceLocation ARCHITECTURY = new ResourceLocation("architectury", "network");
+    /**
+     * Límite de lo retenido del cliente por conexión: el tipo lo elige el cliente (canales o ids de
+     * Architectury inventados), y sin límite una conexión sin autenticar podría llenar la memoria.
+     * Lo que no cabe se descarta. Al entrar, un modpack grande envía unas decenas de tipos pequeños.
+     */
+    private static final int MAX_HELD_TYPES = 64;
+    private static final int MAX_HELD_BYTES = 1 << 20;
 
     /** extraData no es null si se abrió con NetworkHooks.openScreen (y se vuelve a abrir así). */
     private record MenuRequest(MenuProvider provider, @Nullable Consumer<FriendlyByteBuf> extraData) {}
@@ -53,6 +61,8 @@ public final class JailTraffic {
     private static final class Held {
         final ServerGamePacketListenerImpl connection;
         final Map<String, ServerboundCustomPayloadPacket> fromClient = new LinkedHashMap<>();
+        int fromClientBytes;
+        boolean warnedFull;
         final Map<String, Deferred> toClient = new LinkedHashMap<>();
         @Nullable MenuRequest menu;
         boolean released;
@@ -146,19 +156,39 @@ public final class JailTraffic {
             if (held != null && held.connection == connection) {
                 String type = payloadType(channel, packet.getData());
                 synchronized (held) {
-                    if (!held.released) releaseBuffer(held.fromClient.remove(type));
+                    if (!held.released) {
+                        ServerboundCustomPayloadPacket older = held.fromClient.remove(type);
+                        held.fromClientBytes -= size(older);
+                        releaseBuffer(older);
+                    }
                 }
             }
             return false;
         }
         String type = payloadType(channel, packet.getData());
         if (listed(DirectAuth.getConfig().heldPayloadExceptions, channel, type)) return false;
+        // Si no cabe se descarta igualmente: devuelve true
         return store(connection, held -> {
+            ServerboundCustomPayloadPacket previous = held.fromClient.get(type);
+            int bytes = held.fromClientBytes - size(previous) + size(packet);
+            if (previous == null && held.fromClient.size() >= MAX_HELD_TYPES || bytes > MAX_HELD_BYTES) {
+                if (!held.warnedFull) {
+                    held.warnedFull = true;
+                    DirectAuth.LOGGER.warn("DirectAuth: Too many mod payloads from unauthenticated {}, dropping the rest (first dropped: {})",
+                        connection.player.getGameProfile().getName(), type);
+                }
+                return;
+            }
             // Vanilla libera el buffer del paquete al terminar de procesarlo: lo conservamos
             packet.getData().retain();
             releaseBuffer(held.fromClient.remove(type)); // el último de cada tipo, en orden de llegada
             held.fromClient.put(type, packet);
+            held.fromClientBytes = bytes;
         });
+    }
+
+    private static int size(@Nullable ServerboundCustomPayloadPacket packet) {
+        return packet == null ? 0 : packet.getData().readableBytes();
     }
 
     private static void releaseBuffer(@Nullable ServerboundCustomPayloadPacket packet) {
@@ -174,7 +204,7 @@ public final class JailTraffic {
         if (!(packet instanceof ClientboundCustomPayloadPacket custom) || !PlayerRestrictionHandler.isRestricted(connection.player)) return false;
         ResourceLocation channel = custom.getIdentifier();
         if (isLoaderPayload(channel)) return false;
-        String type = payloadType(channel, custom.getData());
+        String type = payloadType(channel, ((ClientboundCustomPayloadPacketAccessor) custom).getDataWithoutCopy());
         boolean defer = listed(DirectAuth.getConfig().deferredScreenPayloads, channel, type);
         if (DirectAuth.getConfig().logJailPayloads) {
             DirectAuth.LOGGER.info("DirectAuth: payload {} to unauthenticated {}{}", type,

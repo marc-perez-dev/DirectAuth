@@ -1,7 +1,11 @@
 package com.marcp.directauth.network;
 
 import com.marcp.directauth.DirectAuth;
+import com.marcp.directauth.auth.AuthTasks;
+import com.marcp.directauth.mixin.ServerGamePacketListenerAccessor;
 import net.minecraft.network.chat.Component;
+import net.minecraft.network.chat.LastSeenMessages;
+import net.minecraft.network.chat.SignedMessageChain;
 import net.minecraft.network.protocol.Packet;
 import net.minecraft.network.protocol.game.ServerboundAcceptTeleportationPacket;
 import net.minecraft.network.protocol.game.ServerboundChatAckPacket;
@@ -38,6 +42,7 @@ import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.server.network.ServerGamePacketListenerImpl;
 
 
+import java.util.Optional;
 import java.util.Set;
 
 /**
@@ -81,14 +86,30 @@ public final class JailPackets {
 
     /**
      * Mensaje de chat (no un comando) de un jugador en la jaula: no lo ve nadie, ni siquiera otras
-     * mods que leen el chat antes de ServerChatEvent (la IA de aldeanos de MCA lo envía a un
-     * servicio externo). Se aplica el acuse de los mensajes que el cliente ha visto, como haría
-     * vanilla al procesarlo, para que la validación del chat siga cuadrando tras /login. Hilo de red.
+     * mods que leen el chat antes de ServerChatEvent (la IA de aldeanos de MCA engancha el principio
+     * de handleChat y lo envía a un servicio externo). Se valida como en vanilla handleChat, sin
+     * difundirlo: así los mensajes vistos y la cadena de mensajes firmados del servidor avanzan
+     * igual que en el cliente, y el chat sigue funcionando tras /login (con el chat firmado, un
+     * eslabón sin avanzar echaría al jugador en su siguiente mensaje). Hilo de red.
      */
     public static void dropChat(ServerGamePacketListenerImpl connection, ServerboundChatPacket chat) {
-        connection.handleChatAck(new ServerboundChatAckPacket(chat.lastSeenMessages().offset()));
+        ServerGamePacketListenerAccessor vanilla = (ServerGamePacketListenerAccessor) connection;
+        if (ServerGamePacketListenerAccessor.callIsChatMessageIllegal(chat.message())) {
+            connection.disconnect(Component.translatable("multiplayer.disconnect.illegal_characters"));
+            return;
+        }
+        Optional<LastSeenMessages> lastSeen = vanilla.callTryHandleChat(chat.message(), chat.timeStamp(), chat.lastSeenMessages());
+        if (lastSeen.isEmpty()) return; // vanilla ya ha desconectado o avisado
         ServerPlayer player = connection.player;
-        player.server.execute(() -> player.sendSystemMessage(Component.literal(DirectAuth.getConfig().getLang().msgUseCommands)));
+        AuthTasks.onServerThread(player.server).execute(() -> {
+            try {
+                vanilla.callGetSignedMessage(chat, lastSeen.get());
+            } catch (SignedMessageChain.DecodeException e) {
+                vanilla.callHandleMessageDecodeFailure(e);
+                return;
+            }
+            player.sendSystemMessage(Component.literal(DirectAuth.getConfig().getLang().msgUseCommands));
+        });
     }
 
     public static boolean allowed(Packet<?> packet) {

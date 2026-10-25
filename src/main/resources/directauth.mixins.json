@@ -13,6 +13,8 @@
     "MixinRconConsoleSource",
     "MixinItemPhysicPackets",
     "ServerPlayerAccessor",
+    "ServerGamePacketListenerAccessor",
+    "ClientboundCustomPayloadPacketAccessor",
     "MixinServerGamePacketListenerCustomPayload",
     "MixinConnection",
     "MixinServerPlayerOpenMenu",
