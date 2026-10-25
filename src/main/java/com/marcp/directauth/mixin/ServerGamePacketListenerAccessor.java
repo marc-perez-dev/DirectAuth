@@ -27,4 +27,7 @@ public interface ServerGamePacketListenerAccessor {
 
     @Invoker("handleMessageDecodeFailure")
     void callHandleMessageDecodeFailure(SignedMessageChain.DecodeException exception);
+
+    @Invoker("detectRateSpam")
+    void callDetectRateSpam();
 }

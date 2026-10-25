@@ -2,6 +2,7 @@ package com.marcp.directauth.network;
 
 import com.marcp.directauth.DirectAuth;
 import com.marcp.directauth.auth.AuthTasks;
+import com.marcp.directauth.events.PlayerRestrictionHandler;
 import com.marcp.directauth.mixin.ServerGamePacketListenerAccessor;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.LastSeenMessages;
@@ -108,7 +109,11 @@ public final class JailPackets {
                 vanilla.callHandleMessageDecodeFailure(e);
                 return;
             }
-            player.sendSystemMessage(Component.literal(DirectAuth.getConfig().getLang().msgUseCommands));
+            vanilla.callDetectRateSpam(); // un cliente sin autenticar que inunda el chat también acaba fuera
+            // Si /login terminó entre medias, el mensaje ya se descartó, pero no hay que pedirle que se autentique
+            if (PlayerRestrictionHandler.isRestricted(player)) {
+                player.sendSystemMessage(Component.literal(DirectAuth.getConfig().getLang().msgUseCommands));
+            }
         });
     }
 
