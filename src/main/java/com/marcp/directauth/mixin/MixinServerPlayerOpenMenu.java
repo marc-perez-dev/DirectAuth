@@ -17,7 +17,9 @@ import java.util.function.Consumer;
  * Un jugador sin autenticar no puede abrir contenedores él mismo, así que cualquier menú que se le
  * abra lo abre el servidor (p. ej. la elección de raza de Tensura al entrar) y le taparía el chat
  * antes de /login. Se aplaza hasta que se autentique (ver JailTraffic). openMenu(MenuProvider) de
- * vanilla delega en esta variante de NeoForge.
+ * vanilla delega en esta variante de NeoForge. Quien lo abre recibe "no abierto", así que lo que
+ * enviara después con el id del menú no se repite al abrirlo (los menús de comercio, que lo hacen,
+ * no se pueden abrir desde la jaula).
  */
 @Mixin(ServerPlayer.class)
 public abstract class MixinServerPlayerOpenMenu {
@@ -27,8 +29,7 @@ public abstract class MixinServerPlayerOpenMenu {
     private void directAuth$deferMenuWhileUnauthenticated(MenuProvider menu, Consumer<RegistryFriendlyByteBuf> extraData,
             CallbackInfoReturnable<OptionalInt> cir) {
         ServerPlayer self = (ServerPlayer) (Object) this;
-        if (menu != null && PlayerRestrictionHandler.isRestricted(self)) {
-            JailTraffic.deferMenu(self, menu, extraData);
+        if (menu != null && PlayerRestrictionHandler.isRestricted(self) && JailTraffic.deferMenu(self, menu, extraData)) {
             cir.setReturnValue(OptionalInt.empty());
         }
     }

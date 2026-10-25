@@ -37,24 +37,33 @@ public class ModConfig {
     public int maxAccountsPerIP = 5;  // Max 5 accounts per IP
 
     // --- Other mods ---
+    // Ids por defecto de las listas de otras mods, con la versión de estos valores por defecto en la
+    // que se añadió cada uno. Una config escrita con una versión anterior recibe al cargarse los que
+    // le falten (los usuarios no editan la config a mano); los que el admin quitó después no vuelven.
+    private static final int OTHER_MODS_DEFAULTS = 1;
+    private static final Map<String, Integer> DEFAULT_SCREEN_PAYLOADS = new LinkedHashMap<>();
+    private static final Map<String, Integer> DEFAULT_HELD_EXCEPTIONS = new LinkedHashMap<>();
+    static {
+        DEFAULT_SCREEN_PAYLOADS.put("neoorigins:open_origin_screen", 1);                  // Neo Origins: elección de origen
+        DEFAULT_SCREEN_PAYLOADS.put("mca:open_destiny_gui_request", 1);                   // MCA Reborn: Destiny
+        DEFAULT_SCREEN_PAYLOADS.put("pixelmon:starterlistpacket", 1);                     // Pixelmon: elección de inicial
+        DEFAULT_SCREEN_PAYLOADS.put("dragonsurvival:open_dragon_altar", 1);               // Dragon Survival: altar de dragón
+        DEFAULT_SCREEN_PAYLOADS.put("starterkit:to_client_receive_kit_data_packet", 1);   // Starter Kit: elección de kit
+        DEFAULT_HELD_EXCEPTIONS.put("starterkit:to_server_announce_mod_is_installed_packet", 1); // Starter Kit: "tengo la mod" (5 s de plazo)
+    }
+
     // Paquetes de otras mods que abren una pantalla al entrar. A un jugador sin autenticar se le
     // entregan al autenticarse (solo el último de cada id), para que no le tapen el chat antes.
-    public List<String> deferredScreenPayloads = new ArrayList<>(List.of(
-        "neoorigins:open_origin_screen",                   // Neo Origins: elección de origen
-        "mca:open_destiny_gui_request",                    // MCA Reborn: Destiny
-        "pixelmon:starterlistpacket",                      // Pixelmon: elección de inicial
-        "dragonsurvival:open_dragon_altar",                // Dragon Survival: altar de dragón
-        "starterkit:to_client_receive_kit_data_packet"     // Starter Kit: elección de kit
-    ));
+    public List<String> deferredScreenPayloads = new ArrayList<>(DEFAULT_SCREEN_PAYLOADS.keySet());
     // Paquetes de otras mods que un jugador sin autenticar sí puede enviar. El resto se retiene
     // hasta que se autentica (y se descarta si se desconecta antes). Solo para respuestas que una
     // mod espera con plazo y que no hacen nada en nombre de la cuenta.
-    public List<String> heldPayloadExceptions = new ArrayList<>(List.of(
-        "starterkit:to_server_announce_mod_is_installed_packet" // Starter Kit: "tengo la mod" (5 s de plazo)
-    ));
+    public List<String> heldPayloadExceptions = new ArrayList<>(DEFAULT_HELD_EXCEPTIONS.keySet());
     // Escribe en el log los paquetes de otras mods que recibe un jugador sin autenticar, para
     // encontrar el id de una pantalla que añadir a deferredScreenPayloads.
     public boolean logJailPayloads = false;
+    // Hasta qué versión de los valores por defecto de las dos listas anteriores se han aplicado
+    public int otherModsDefaultsVersion = OTHER_MODS_DEFAULTS;
 
     // --- Data Migration Settings ---
     // Mapa: Ruta de la carpeta -> Modo de migración
@@ -115,6 +124,12 @@ public class ModConfig {
             ModConfig defaults = new ModConfig();
             if (config.deferredScreenPayloads == null) config.deferredScreenPayloads = defaults.deferredScreenPayloads;
             if (config.heldPayloadExceptions == null) config.heldPayloadExceptions = defaults.heldPayloadExceptions;
+            // Ids por defecto añadidos en versiones posteriores a la que escribió el fichero
+            if (config.otherModsDefaultsVersion < OTHER_MODS_DEFAULTS) {
+                addNewDefaults(config.deferredScreenPayloads, DEFAULT_SCREEN_PAYLOADS, config.otherModsDefaultsVersion);
+                addNewDefaults(config.heldPayloadExceptions, DEFAULT_HELD_EXCEPTIONS, config.otherModsDefaultsVersion);
+                config.otherModsDefaultsVersion = OTHER_MODS_DEFAULTS;
+            }
 
             // Asegurar que el mapa no sea nulo si viene de una config vieja
             if (config.migrationMap == null || config.migrationMap.isEmpty()) {
@@ -140,6 +155,12 @@ public class ModConfig {
 
         config.loadLanguages(configPath.getParent());
         return config;
+    }
+
+    private static void addNewDefaults(List<String> list, Map<String, Integer> defaults, int appliedVersion) {
+        defaults.forEach((id, version) -> {
+            if (version > appliedVersion && !list.contains(id)) list.add(id);
+        });
     }
 
     /** Built-in defaults plus the language files, used when the config file cannot be read at startup. */

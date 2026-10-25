@@ -3,7 +3,9 @@ package com.marcp.directauth.mixin;
 import com.marcp.directauth.DirectAuth;
 import com.marcp.directauth.events.PlayerRestrictionHandler;
 import net.minecraft.network.chat.Component;
+import net.minecraft.network.protocol.game.ClientboundSetCarriedItemPacket;
 import net.minecraft.network.protocol.game.ServerboundContainerClickPacket;
+import net.minecraft.network.protocol.game.ServerboundPickItemPacket;
 import net.minecraft.network.protocol.game.ServerboundPlayerActionPacket;
 import net.minecraft.network.protocol.game.ServerboundSetCreativeModeSlotPacket;
 import net.minecraft.server.level.ServerPlayer;
@@ -17,7 +19,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 /**
  * Bloquea en su origen las acciones de inventario de un jugador sin autenticar (tirar objetos,
- * clics en contenedores, ranura de creativo). Se hace sobre los paquetes y no sobre
+ * cambiar a la otra mano, botón central, clics en contenedores, ranura de creativo). Se hace sobre los paquetes y no sobre
  * ItemTossEvent porque ese evento también lo disparan drops del propio juego (cerrar menús al
  * desconectarse, /give), que no deben alterarse.
  *
@@ -42,6 +44,20 @@ public abstract class MixinServerGamePacketListenerImpl {
             // El cliente ya quitó el objeto de su vista: reenviarle el inventario real
             this.player.containerMenu.sendAllDataToRemote();
             this.player.sendSystemMessage(Component.literal(DirectAuth.getConfig().getLang().msgNoDrop));
+        } else if (action == ServerboundPlayerActionPacket.Action.SWAP_ITEM_WITH_OFFHAND && PlayerRestrictionHandler.isRestricted(this.player)) {
+            // Tecla F: tampoco se reordena el inventario de la cuenta
+            ci.cancel();
+            this.player.inventoryMenu.sendAllDataToRemote();
+        }
+    }
+
+    @Inject(method = "handlePickItem", at = @At(value = "INVOKE", target = ENSURE_MAIN_THREAD, shift = At.Shift.AFTER), cancellable = true)
+    private void directAuth$blockPickItemWhileUnauthenticated(ServerboundPickItemPacket packet, CallbackInfo ci) {
+        // Botón central sobre un bloque: lleva un objeto del inventario a la barra rápida
+        if (PlayerRestrictionHandler.isRestricted(this.player)) {
+            ci.cancel();
+            this.player.inventoryMenu.sendAllDataToRemote();
+            this.player.connection.send(new ClientboundSetCarriedItemPacket(this.player.getInventory().selected));
         }
     }
 

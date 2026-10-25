@@ -41,30 +41,50 @@ public final class JailTraffic {
 
     private record MenuRequest(MenuProvider provider, @Nullable Consumer<RegistryFriendlyByteBuf> extraData) {}
 
+    private record Deferred(Packet<?> packet, @Nullable PacketSendListener sendListener) {}
+
     /** Lo retenido de una conexión concreta (una reconexión empieza de cero). */
     private static final class Held {
         final ServerGamePacketListenerImpl connection;
         final Map<ResourceLocation, ServerboundCustomPayloadPacket> fromClient = new LinkedHashMap<>();
-        final Map<ResourceLocation, Packet<?>> toClient = new LinkedHashMap<>();
+        final Map<ResourceLocation, Deferred> toClient = new LinkedHashMap<>();
         @Nullable MenuRequest menu;
         boolean released;
 
         Held(ServerGamePacketListenerImpl connection) {
             this.connection = connection;
         }
+
+        boolean isEmpty() {
+            return fromClient.isEmpty() && toClient.isEmpty() && menu == null;
+        }
     }
 
     private JailTraffic() {
     }
 
-    private static Held heldFor(ServerGamePacketListenerImpl connection) {
-        return HELD.compute(connection.player.getUUID(),
-            (uuid, held) -> held == null || held.connection != connection ? new Held(connection) : held);
+    /**
+     * Guarda algo para una conexión en la jaula. Devuelve false (y no guarda nada) si la conexión ya
+     * se cerró, ya se liberó o el jugador ya está autenticado: entonces debe seguir su curso normal.
+     * Se comprueba bajo el candado porque release() y discard() corren en otro hilo.
+     */
+    private static boolean store(ServerGamePacketListenerImpl connection, Consumer<Held> add) {
+        if (!connection.getConnection().isConnected()) return false; // discard() ya pasó o va a pasar
+        UUID uuid = connection.player.getUUID();
+        Held held = HELD.compute(uuid, (key, current) -> current == null || current.connection != connection ? new Held(connection) : current);
+        synchronized (held) {
+            if (held.released || !PlayerRestrictionHandler.isRestricted(connection.player)) {
+                if (held.isEmpty()) HELD.remove(uuid, held);
+                return false;
+            }
+            add.accept(held);
+            return true;
+        }
     }
 
     /** Payloads que nunca se retienen: los de Minecraft no llegan aquí; estos son de NeoForge. */
     private static boolean isLoaderPayload(ResourceLocation id) {
-        return id.getNamespace().equals("neoforge") || id.getNamespace().equals("c");
+        return id.getNamespace().equals("neoforge");
     }
 
     /**
@@ -72,17 +92,23 @@ public final class JailTraffic {
      * debe procesarse ahora.
      */
     public static boolean holdFromClient(ServerGamePacketListenerImpl connection, ServerboundCustomPayloadPacket packet) {
-        if (!PlayerRestrictionHandler.isRestricted(connection.player)) return false;
         ResourceLocation id = packet.payload().type().id();
+        if (!PlayerRestrictionHandler.isRestricted(connection.player)) {
+            // Recién autenticado pero release() aún no ha corrido: este paquete es más nuevo que el
+            // retenido del mismo tipo, que ya no debe procesarse después
+            Held held = HELD.get(connection.player.getUUID());
+            if (held != null && held.connection == connection) {
+                synchronized (held) {
+                    if (!held.released) held.fromClient.remove(id);
+                }
+            }
+            return false;
+        }
         if (isLoaderPayload(id) || DirectAuth.getConfig().heldPayloadExceptions.contains(id.toString())) return false;
-        Held held = heldFor(connection);
-        synchronized (held) {
-            // release() puede haber corrido entre la primera comprobación y el candado
-            if (held.released || !PlayerRestrictionHandler.isRestricted(connection.player)) return false;
+        return store(connection, held -> {
             held.fromClient.remove(id); // el último de cada tipo, en orden de llegada
             held.fromClient.put(id, packet);
-        }
-        return true;
+        });
     }
 
     /**
@@ -92,23 +118,32 @@ public final class JailTraffic {
     public static boolean deferToClient(ServerGamePacketListenerImpl connection, Packet<?> packet, @Nullable PacketSendListener sendListener) {
         if (!PlayerRestrictionHandler.isRestricted(connection.player)) return false;
         if (packet instanceof ClientboundCustomPayloadPacket custom) {
-            if (!shouldDefer(connection, custom)) return false;
-            defer(connection, custom);
-            return true;
+            return shouldDefer(connection, custom) && defer(connection, custom, sendListener);
         }
         // PacketDistributor junta varios payloads en un bundle
         if (packet instanceof ClientboundBundlePacket bundle) {
             List<Packet<? super ClientGamePacketListener>> rest = new ArrayList<>();
-            boolean deferred = false;
+            List<ClientboundCustomPayloadPacket> toDefer = new ArrayList<>();
             for (Packet<? super ClientGamePacketListener> sub : bundle.subPackets()) {
                 if (sub instanceof ClientboundCustomPayloadPacket custom && shouldDefer(connection, custom)) {
-                    defer(connection, custom);
-                    deferred = true;
+                    toDefer.add(custom);
                 } else {
                     rest.add(sub);
                 }
             }
-            if (!deferred) return false;
+            if (toDefer.isEmpty()) return false;
+            // El aviso de envío va con lo que se envía ahora o, si se aplaza todo, con el último
+            int deferred = 0;
+            for (int i = 0; i < toDefer.size(); i++) {
+                ClientboundCustomPayloadPacket custom = toDefer.get(i);
+                boolean last = i == toDefer.size() - 1;
+                if (defer(connection, custom, last && rest.isEmpty() ? sendListener : null)) {
+                    deferred++;
+                } else {
+                    rest.add(custom);
+                }
+            }
+            if (deferred == 0) return false; // se autenticó entretanto: el bundle sigue tal cual
             if (!rest.isEmpty()) connection.send(new ClientboundBundlePacket(rest), sendListener);
             return true;
         }
@@ -126,21 +161,21 @@ public final class JailTraffic {
         return defer;
     }
 
-    private static void defer(ServerGamePacketListenerImpl connection, ClientboundCustomPayloadPacket packet) {
+    private static boolean defer(ServerGamePacketListenerImpl connection, ClientboundCustomPayloadPacket packet, @Nullable PacketSendListener sendListener) {
         ResourceLocation id = packet.payload().type().id();
-        Held held = heldFor(connection);
-        synchronized (held) {
+        return store(connection, held -> {
             held.toClient.remove(id); // Pixelmon reenvía su pantalla cada 5 s: basta con la última
-            held.toClient.put(id, packet);
-        }
+            held.toClient.put(id, new Deferred(packet, sendListener));
+        });
     }
 
-    /** Menú que el servidor abre a un jugador en la jaula: se abrirá al autenticarse (el último). */
-    public static void deferMenu(ServerPlayer player, MenuProvider provider, @Nullable Consumer<RegistryFriendlyByteBuf> extraData) {
-        Held held = heldFor(player.connection);
-        synchronized (held) {
-            held.menu = new MenuRequest(provider, extraData);
-        }
+    /**
+     * Menú que el servidor abre a un jugador en la jaula: se abrirá al autenticarse (el último).
+     * Devuelve false si el jugador ya no está en la jaula y el menú debe abrirse ahora.
+     * Quien abre el menú recibe "no abierto": lo que enviara después con su id no se repite.
+     */
+    public static boolean deferMenu(ServerPlayer player, MenuProvider provider, @Nullable Consumer<RegistryFriendlyByteBuf> extraData) {
+        return store(player.connection, held -> held.menu = new MenuRequest(provider, extraData));
     }
 
     /**
@@ -150,7 +185,7 @@ public final class JailTraffic {
     public static void release(ServerPlayer player) {
         Held held = HELD.get(player.getUUID());
         if (held == null) return;
-        List<Packet<?>> toClient;
+        List<Deferred> toClient;
         List<ServerboundCustomPayloadPacket> fromClient;
         MenuRequest menu;
         synchronized (held) {
@@ -161,7 +196,7 @@ public final class JailTraffic {
             menu = held.menu;
         }
         if (player.connection != held.connection || player.hasDisconnected()) return;
-        toClient.forEach(player.connection::send);
+        for (Deferred deferred : toClient) player.connection.send(deferred.packet(), deferred.sendListener());
         for (ServerboundCustomPayloadPacket packet : fromClient) {
             try {
                 NetworkRegistry.handleModdedPayload(player.connection, packet);

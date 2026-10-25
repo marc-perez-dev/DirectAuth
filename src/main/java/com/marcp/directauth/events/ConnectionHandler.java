@@ -61,9 +61,12 @@ public class ConnectionHandler {
             // ANTES de sacarlos: el marcador de "no existe" se devuelve como null.
             boolean preLoaded = DirectAuth.getLoginManager().isPreLoaded(username);
             UserData cachedData = DirectAuth.getLoginManager().getAndRemovePreLoadedData(username);
+            // Ahora, antes de que tickee: el tiempo de juego sube en la jaula y, con el fallback
+            // asíncrono, un jugador nuevo parecería haber jugado ya
+            boolean playedBefore = hasPlayedBefore(player);
 
             if (preLoaded) {
-                processLogin(player, cachedData);
+                processLogin(player, cachedData, playedBefore);
             } else {
                 // 2. Si no dio tiempo a cargar (raro), hacemos el fallback asíncrono
                 UUID uuid = player.getUUID();
@@ -76,14 +79,14 @@ public class ConnectionHandler {
                         current.connection.disconnect(Component.literal(DirectAuth.getConfig().getLang().errInternal));
                         return;
                     }
-                    processLogin(current, userData);
+                    processLogin(current, userData, playedBefore);
                 }, AuthTasks.onServerThread(player.getServer()));
             }
         }
     }
 
     // Método auxiliar para no duplicar código
-    private void processLogin(ServerPlayer player, UserData userData) {
+    private void processLogin(ServerPlayer player, UserData userData, boolean playedBefore) {
         boolean isAuthenticated = false;
 
         // Caso Premium
@@ -113,9 +116,9 @@ public class ConnectionHandler {
             // Si una entrada anterior sin login (p. ej. alguien con su nombre desde otra IP) lo
             // movió al spawn, su posición real quedó guardada: devolverlo a ella.
             DirectAuth.getPositionManager().restorePosition(player);
-            // Lo que otras mods le enviaron (o él a ellas) en este mismo evento de entrada, antes
-            // de que DirectAuth lo autenticara
-            JailTraffic.release(player);
+            // Como tras /login: lo que otras mods le enviaron (o él a ellas) en este mismo evento
+            // de entrada, antes de que DirectAuth lo autenticara
+            PlayerRestrictionHandler.release(player);
         }
 
         // Si NO está autenticado (usuario nuevo o login pendiente), ocultar coordenadas
@@ -123,7 +126,6 @@ public class ConnectionHandler {
             // Un jugador que nunca ha jugado no tiene una posición que ocultar: se queda donde lo
             // haya puesto el juego o una mod que lo mueve en la primera entrada (a otra dimensión, a
             // una isla...), corra antes o después que DirectAuth.
-            boolean playedBefore = hasPlayedBefore(player);
 
             // [CAMBIO CLAVE] Solo guardar posición si está vivo y con salud. Un jugador que nunca
             // ha jugado ya está en el spawn: no hace falta guardarle nada (y así los bots con
@@ -140,7 +142,7 @@ public class ConnectionHandler {
             }
 
             // Si el jugador ya tickeó antes de llegar aquí (fallback asíncrono), su ancla apunta
-            // a la posición original: la descartamos para que se re-ancle en el spawn.
+            // a la posición original: la descartamos para que se re-ancle donde está ahora.
             PlayerRestrictionHandler.removeAnchor(player);
 
             // El mixin de tickEffects congela las duraciones en servidor. Limpiamos

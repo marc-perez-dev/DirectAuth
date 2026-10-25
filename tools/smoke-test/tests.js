@@ -132,11 +132,12 @@ const rconTest = async (cmd) => /Test passed/.test(await T.rcon(cmd))
   })
 
   // ========== Jaula ==========
-  await test('jail: chat, commands, movement, Q-drop, container click, creative slot, block break, damage, effects, armor stand', async () => {
+  await test('jail: chat, commands, movement, Q-drop, offhand swap, pick item, container click, creative slot, block break, damage, effects, armor stand', async () => {
     const JAIL = process.env.JAIL || 'Jail'
     let b = await register(JAIL, process.env.JAIL_IP || '127.0.0.8')
     await T.rcon(`give ${JAIL} minecraft:diamond 5`)
     await T.rcon(`give ${JAIL} minecraft:iron_helmet 1`)
+    await T.rcon(`item replace entity ${JAIL} inventory.0 with minecraft:emerald`)
     await T.sleep(300)
     await logout(b)
     const obs = await register(JAIL + 'O', '127.0.0.9')
@@ -193,6 +194,17 @@ const rconTest = async (cmd) => /Test passed/.test(await T.rcon(cmd))
     T.assert(await T.countItem(JAIL, 'minecraft:diamond_block') === 0, 'creative slot packet gave items')
     await T.rcon(`gamemode survival ${JAIL}`)
 
+    // F (cambiar a la otra mano) y botón central (llevar un objeto del inventario a la barra)
+    const inOffhand = () => rconTest(`execute if data entity ${JAIL} Inventory[{Slot:-106b}]`)
+    const emeraldInSlot9 = () => rconTest(`execute if data entity ${JAIL} Inventory[{Slot:9b,id:"minecraft:emerald"}]`)
+    b.setQuickBarSlot(b.inventory.items().find((i) => i.name === 'diamond').slot - 36)
+    await T.sleep(200)
+    b._client.write('block_dig', { status: 6, location: { x: 0, y: 0, z: 0 }, face: 0, sequence: 0 })
+    b._client.write('pick_item', { slot: 9 })
+    await T.sleep(500)
+    T.assert(!(await inOffhand()), 'F moved the held item to the offhand')
+    T.assert(await emeraldInSlot9(), 'pick item moved an inventory item to the hotbar')
+
     // Romper bloque
     const p = (await T.posOf(JAIL)).map(Math.floor)
     await T.rcon(`setblock ${p[0]} ${p[1] - 1} ${p[2]} minecraft:grass_block`)
@@ -238,7 +250,18 @@ const rconTest = async (cmd) => /Test passed/.test(await T.rcon(cmd))
     T.send(b, 'hello_after_login')
     await T.expect(obs, /hello_after_login/)
 
-    // Controles positivos: tras el login sí se puede tirar y romper
+    // Controles positivos: tras el login sí se puede cambiar de mano, usar el botón central,
+    // tirar y romper
+    await T.sleep(500)
+    b._client.write('pick_item', { slot: 9 })
+    await T.sleep(500)
+    T.assert(!(await emeraldInSlot9()), 'control: pick item did nothing after login')
+    b.setQuickBarSlot(b.inventory.items().find((i) => i.name === 'diamond').slot - 36)
+    await T.sleep(200)
+    b._client.write('block_dig', { status: 6, location: { x: 0, y: 0, z: 0 }, face: 0, sequence: 0 })
+    await T.sleep(500)
+    T.assert(await inOffhand(), 'control: F did not swap hands after login')
+    b._client.write('block_dig', { status: 6, location: { x: 0, y: 0, z: 0 }, face: 0, sequence: 0 })
     await T.sleep(500)
     const d2 = b.inventory.items().find((i) => i.name === 'diamond')
     b.setQuickBarSlot(d2.slot - 36)

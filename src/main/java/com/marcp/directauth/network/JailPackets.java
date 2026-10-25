@@ -45,8 +45,9 @@ import java.util.Set;
  * <p>
  * Algunos paquetes permitidos se procesan para que la propia jaula los rechace con su efecto
  * visible corregido en el cliente: interactuar, usar objetos y romper los cancelan los eventos de
- * {@code PlayerRestrictionHandler} (que reenvían el bloque al cliente), y los clics en el inventario
- * y la ranura de creativo los cancela {@code MixinServerGamePacketListenerImpl} (que lo resincroniza).
+ * {@code PlayerRestrictionHandler} (que reenvían el bloque al cliente), y tirar o cambiar objetos de
+ * mano, el botón central, los clics en el inventario y la ranura de creativo los cancela
+ * {@code MixinServerGamePacketListenerImpl} (que resincroniza el inventario).
  * Fuera quedan, entre otros, los bloques de comandos, estructuras y puzles, la dificultad, las
  * consultas NBT, editar libros, colocar recetas y los botones de los menús.
  */
@@ -65,13 +66,14 @@ public final class JailPackets {
         ServerboundMovePlayerPacket.class, ServerboundAcceptTeleportationPacket.class, ServerboundPlayerInputPacket.class,
         ServerboundPlayerCommandPacket.class, ServerboundPlayerAbilitiesPacket.class, ServerboundMoveVehiclePacket.class,
         ServerboundPaddleBoatPacket.class, ServerboundClientCommandPacket.class, ServerboundSwingPacket.class,
-        // Inventario propio y pantallas del cliente
-        ServerboundSetCarriedItemPacket.class, ServerboundPickItemPacket.class, ServerboundContainerClosePacket.class,
+        // Ranura seleccionada y pantallas del cliente
+        ServerboundSetCarriedItemPacket.class, ServerboundContainerClosePacket.class,
         ServerboundSeenAdvancementsPacket.class, ServerboundRecipeBookChangeSettingsPacket.class,
         ServerboundRecipeBookSeenRecipePacket.class,
         // Los rechaza la jaula corrigiendo el cliente (ver arriba)
         ServerboundInteractPacket.class, ServerboundUseItemPacket.class, ServerboundUseItemOnPacket.class,
-        ServerboundPlayerActionPacket.class, ServerboundContainerClickPacket.class, ServerboundSetCreativeModeSlotPacket.class
+        ServerboundPlayerActionPacket.class, ServerboundPickItemPacket.class, ServerboundContainerClickPacket.class,
+        ServerboundSetCreativeModeSlotPacket.class
     );
 
     private JailPackets() {
