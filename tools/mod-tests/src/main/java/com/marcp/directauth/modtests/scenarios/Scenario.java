@@ -3,7 +3,7 @@ package com.marcp.directauth.modtests.scenarios;
 import com.marcp.directauth.modtests.ClientDriver;
 
 /**
- * Un escenario por mod. Se carga por nombre (run.js --scenario) para que las clases de una mod
+ * Un escenario por mod. Se carga por nombre (-Ddirectauth.modtest.scenario, que pone run.js) para que las clases de una mod
  * solo se resuelvan cuando esa mod está instalada.
  */
 public interface Scenario {
@@ -42,7 +42,7 @@ public interface Scenario {
      */
     static void registerNewChecking(ClientDriver d, String what, String screenPrefix) throws Exception {
         joinNew(d);
-        // Las mods abren su pantalla al entrar o unos segundos después (Dragon Survival: 5 s)
+        // Las mods abren su pantalla al entrar o unos segundos después (Pixelmon reenvía la suya cada 5 s)
         d.sleep(7000);
         d.check(what + " hidden while jailed (new player)", !d.screenName().startsWith(screenPrefix), d.screenName());
         register(d);

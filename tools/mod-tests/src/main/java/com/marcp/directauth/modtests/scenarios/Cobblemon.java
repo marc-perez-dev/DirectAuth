@@ -80,8 +80,11 @@ public class Cobblemon implements Scenario {
 
     /** Lo que envía el botón "liberar" del resumen del equipo. */
     private static void release(ClientDriver d) throws Exception {
-        int slot = d.onClient(Cobblemon::firstSlot);
-        UUID uuid = d.onClient(() -> firstPokemon().getUuid());
-        d.onClientRun(() -> new ReleasePartyPokemonPacket(uuid, new PartyPosition(slot)).sendToServer());
+        // Ranura y Pokémon de la misma lectura del equipo (puede llegar una sincronización entre medias)
+        d.onClientRun(() -> {
+            int slot = firstSlot();
+            UUID uuid = CobblemonClient.INSTANCE.getStorage().getMyParty().getSlots().get(slot).getUuid();
+            new ReleasePartyPokemonPacket(uuid, new PartyPosition(slot)).sendToServer();
+        });
     }
 }

@@ -90,7 +90,7 @@ public final class ClientDriver {
         }
     }
 
-    /** "neo-origins" -> "NeoOrigins" */
+    /** "skyblock-builder" -> "SkyblockBuilder" */
     private static String className(String scenario) {
         StringBuilder b = new StringBuilder();
         for (String part : scenario.split("[-_]")) {

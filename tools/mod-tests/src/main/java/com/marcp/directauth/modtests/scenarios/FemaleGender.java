@@ -24,10 +24,14 @@ public class FemaleGender implements Scenario {
         d.check("appearance change from the jail is not applied", !Scenario.mt(d, "wildfire-gender").equals("FEMALE"), Scenario.mt(d, "wildfire-gender"));
         d.disconnect();
 
+        // El cliente aún recuerda FEMALE y lo vuelve a sincronizar al entrar: se retiene hasta /login.
+        // El control usa otro valor para no confundirse con eso.
         Scenario.joinJailed(d);
+        d.sleep(3000);
+        d.check("still the owner's appearance after the impostor left", Scenario.mt(d, "wildfire-gender").equals("MALE"), Scenario.mt(d, "wildfire-gender"));
         Scenario.login(d);
-        setGender(d, Gender.FEMALE);
-        d.check("control: appearance synced after /login", Scenario.waitMt(d, "wildfire-gender", "FEMALE", 5000), Scenario.mt(d, "wildfire-gender"));
+        setGender(d, Gender.OTHER);
+        d.check("control: appearance synced after /login", Scenario.waitMt(d, "wildfire-gender", "OTHER", 5000), Scenario.mt(d, "wildfire-gender"));
         d.disconnect();
     }
 

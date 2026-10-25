@@ -20,7 +20,8 @@ mod, and first-join teleports.
   libraries and assets, about 1 GB more) are installed in `runs/mod-tests/`.
 - The Minecraft EULA accepted, either for the smoke test (`runs/smoke-test/eula.txt`) or here:
   `mkdir -p runs/mod-tests && echo eula=true > runs/mod-tests/eula.txt` (from the repo root).
-- Ports 25570 (game) and 25580 (RCON) free on `127.0.0.1`.
+- Ports 25570 (game), 25580 (RCON) and 24454 (Simple Voice Chat, UDP) free on `127.0.0.1`.
+- Java 17: the one Gradle's toolchain downloaded into `~/.gradle/jdks`, or `JAVA17=/path/to/java`.
 
 ## Usage
 
@@ -91,7 +92,7 @@ and neither has Infiniverse.
 
 | File | What it does |
 |---|---|
-| `mods.json` | Mods (pinned version, URL, sha512, side, required mods) and scenarios: `mods`, `serverMemory`/`clientMemory`, `serverProperties`, `serverFiles` / `clientFiles` (written before the first start; Welcome Screen's FancyMenu screen, which a modpack ships), `firstBoot` (edits after a first start that generates the mods' configs: `replace`, `copy`, `delete`, `write`), `clientJvmArgs`. |
+| `mods.json` | Mods (pinned version, URL, sha512, side, required mods) and scenarios: `mods`, `serverMemory`/`clientMemory`, `serverProperties`, `serverFiles` / `clientFiles` (written before the first start; Welcome Screen's FancyMenu screen, which a modpack ships), `firstBoot` (edits after a first start that generates the mods' configs: `replace`, `copy`, `delete`, `write`), `serverSetup` (RCON commands before the client joins), `clientJvmArgs`, `timeoutMinutes` (15 by default). |
 | `run.js` | Downloads the mods, installs Forge, builds, prepares the server and client directories, runs each scenario and prints the checks. |
 | `src/main/java/.../ClientDriver.java` | Drives the client: connect, disconnect, commands, chat, screens, mod packets, RCON, results. |
 | `src/main/java/.../ServerCommands.java`, `checks/` | `/mt <check> <player>`: mod state read on the server (party size, race, altar...). Each mod's checks load only when the mod is installed. |
@@ -102,7 +103,7 @@ and neither has Infiniverse.
 1. Add it to `mods.json` with its exact file, URL and sha512 (Modrinth's API gives all three), its
    side and its required mods, plus a scenario.
 2. Read what the mod does at first join and which packets its UI sends (decompiled sources go in
-   `build/references/mods/`).
+   `build/references/mods-1.20.1/`; `build/references/mods/` holds `main`'s NeoForge 1.21.1 ones).
 3. Write the scenario class. Add a `/mt` check in `checks/` if the state is not visible over plain
    RCON, and register it in `ServerCommands` behind `ModList.isLoaded`.
 4. Run it against the current DirectAuth and make sure every check fails or passes for the right

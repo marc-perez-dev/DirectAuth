@@ -11,10 +11,12 @@ final class Biting {
 
     static void summonCowNextTo(ClientDriver d) throws Exception {
         String player = d.mc().getUser().getName();
+        // Sin vacas nuevas por su cuenta: la que muerde el cliente (la única que ve) es la que se mide
+        d.rcon("gamerule doMobSpawning false");
         d.rcon("kill @e[type=minecraft:cow]");
         // Que el cliente olvide la vaca anterior: si no, cowId() podría devolver la muerta
         d.require("old cow gone from the client", d.waitFor(() -> cowId(d) < 0, 10_000), "the client still sees a cow");
-        d.rcon("execute at " + player + " run summon minecraft:cow ~1 ~ ~ {NoAI:1b,Invulnerable:0b}");
+        d.rcon("execute at " + player + " run summon minecraft:cow ~1 ~ ~ {NoAI:1b,Invulnerable:0b,Tags:[\"bite_target\"]}");
         d.require("cow visible to the client", d.waitFor(() -> cowId(d) >= 0, 10_000), "no cow in the client world");
     }
 
@@ -28,7 +30,7 @@ final class Biting {
     }
 
     static float cowHealth(ClientDriver d) throws Exception {
-        String reply = d.rcon("data get entity @e[type=minecraft:cow,limit=1] Health");
+        String reply = d.rcon("data get entity @e[type=minecraft:cow,tag=bite_target,limit=1] Health");
         return Float.parseFloat(reply.replaceAll(".*: ([0-9.]+)f?\\s*$", "$1").trim());
     }
 }

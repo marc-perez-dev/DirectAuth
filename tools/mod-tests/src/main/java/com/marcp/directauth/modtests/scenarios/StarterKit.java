@@ -39,8 +39,11 @@ public class StarterKit implements Scenario {
         d.onClientRun(() -> Dispatcher.sendToServer(new ToServerSendKitChoicePacket("Archer")));
     }
 
+    /** Arcos en el inventario; cualquier otra respuesta (jugador no conectado...) es un error, no un 0. */
     private static int bows(ClientDriver d) throws Exception {
         String reply = d.rcon("clear " + d.mc().getUser().getName() + " minecraft:bow 0");
-        return reply.matches("(?s).*Found (\\d+).*") ? Integer.parseInt(reply.replaceAll("(?s).*Found (\\d+).*", "$1")) : 0;
+        if (reply.matches("(?s).*Found (\\d+).*")) return Integer.parseInt(reply.replaceAll("(?s).*Found (\\d+).*", "$1"));
+        if (reply.contains("No items were found")) return 0;
+        throw new IllegalStateException("unexpected reply to clear: " + reply);
     }
 }

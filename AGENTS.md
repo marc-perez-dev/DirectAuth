@@ -63,6 +63,7 @@ DirectAuth/
 │   └── generated/resources/  # output of `runData`
 ├── Documentation/            # GIT-IGNORED — upstream Forge 1.20.1 docs, not part of this mod
 ├── tools/smoke-test/         # end-to-end tests: production Forge server + Mineflayer bots (see its README)
+├── tools/mod-tests/          # end-to-end tests with real third-party mods: production Forge server and client under Xvfb (see its README)
 ├── run/  runs/  run-data/    # gitignored dev runtime dirs (the smoke test uses runs/smoke-test/)
 ├── build/  .gradle/  repo/   # gitignored gradle output
 ├── .github/workflows/build.yml  # CI: gradlew build on push/PR (Ubuntu, Temurin 17)
@@ -199,6 +200,7 @@ All commands from repo root. Java 17 (or newer to run Gradle; the build uses a J
 - Mod metadata is **generated**: edit `src/main/templates/META-INF/mods.toml`. The `generateModMetadata` task expands `${mod_id}`, `${mod_version}`, `${forge_version_range}`, etc. (it is a Groovy template: a literal `${` anywhere in the file, comments included, breaks it). Values come from `gradle.properties`; the task runs on IDE sync.
 - No unit tests, no Checkstyle/Spotless, no pre-commit hooks. The only CI is `.github/workflows/build.yml` running `./gradlew build` on Ubuntu (Temurin 17).
 - End-to-end smoke tests live in `tools/smoke-test/` (Linux, Node ≥ 22.5): `cd tools/smoke-test && npm ci && ./run-all.sh` builds the mod, installs a production Forge 1.20.1-47.4.0 server in `runs/smoke-test/` the first time (needs `eula=true` there), runs it with the reobfuscated jar in `mods/` and drives it with Mineflayer bots, RCON and SQLite checks (~4 min, exit code ≠ 0 on failure). Run it after changing the auth flow, restrictions, Online Mode or admin commands, and add a test for new behavior. Not part of CI.
+- Tests with real third-party mods live in `tools/mod-tests/` (Linux, `xvfb-run`, ~6 GB RAM): `cd tools/mod-tests && node run.js [scenario...]` runs a production Forge server with DirectAuth and the mods of each scenario, and a production Forge client under Xvfb driven by the `directauth_modtests` harness (separate Gradle build; Forge server and client installed in `runs/mod-tests/` the first time; mods pinned with sha512 in `mods.json`). One scenario per mod: screens at first join, packets an impostor could send, first-join teleports. Run it before a release and after changing anything in `network/` or the jail. Not part of CI.
 - Working dir for runs is `run/`. Logs and the dev world live there.
 
 ---

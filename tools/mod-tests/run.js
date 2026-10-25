@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Pruebas con mods reales: arranca un servidor Forge 1.20.1 de producción con DirectAuth y las mods
-// de un escenario, y un cliente Forge real (de desarrollo, sin pantalla, con Xvfb) que ejecuta el
+// de un escenario, y un cliente Forge real (de producción, sin pantalla, con Xvfb) que ejecuta el
 // escenario.
 // Uso: node run.js [escenario...] (sin argumentos: todos los de mods.json). Ver README.md.
 'use strict'
@@ -14,7 +14,6 @@ const HERE = __dirname
 const REPO = path.resolve(HERE, '../..')
 const RUNS = path.join(REPO, 'runs/mod-tests')
 const CACHE = path.join(HERE, 'build/mod-cache')
-// Las mods con nombres de Mojang para el cliente de desarrollo (tarea remapMods de build.gradle)
 // Servidor Forge de producción, instalado una vez y compartido por los escenarios (sus librerías)
 const FORGE = '1.20.1-47.4.0'
 const FORGE_HOME = path.join(RUNS, '_forge')
@@ -331,10 +330,6 @@ function applyEdit (serverDir, op) {
   }
 }
 
-/**
- * Quita mixins de la configuración de un jar (o de un jar anidado: jar-in-jar). Para mods cuyo
- * mixin no aplica en el Minecraft recompilado del entorno de desarrollo (ver README).
- */
 // ---------- Procesos ----------
 
 // Servidor y cliente corren en su propio grupo de procesos: si run.js termina antes (Ctrl-C, error),
@@ -352,7 +347,7 @@ function startProcess (name, cmd, extraJvm, extraArgs, cwd, logFile, wrapper = [
   const out = fs.openSync(logFile, 'w')
   const argv = [...extraJvm, ...cmd.jvm, ...cmd.main, ...extraArgs]
   const [bin, ...rest] = wrapper.length ? [...wrapper, cmd.java, ...argv] : [cmd.java, ...argv]
-  const child = spawn(bin, rest, { cwd, stdio: ['ignore', out, out], detached: true, env: { ...process.env, ...cmd.env } })
+  const child = spawn(bin, rest, { cwd, stdio: ['ignore', out, out], detached: true })
   child.exited = new Promise((resolve) => child.on('exit', (code, signal) => { running.delete(child); resolve(code ?? signal) }))
   child.label = name
   running.add(child)
@@ -399,6 +394,8 @@ function rconCommand (command) {
     let stage = 0
     socket.setTimeout(10000, () => { socket.destroy(); reject(new Error('rcon timeout')) })
     socket.on('error', reject)
+    // Un servidor que se cae o se detiene puede cerrar sin responder: sin esto la promesa no acabaría
+    socket.on('close', () => reject(new Error('rcon connection closed without a reply')))
     socket.on('connect', () => socket.write(packet(1, 3, RCON_PASSWORD)))
     socket.on('data', (chunk) => {
       data = Buffer.concat([data, chunk])
@@ -438,7 +435,7 @@ async function runScenario (scenario) {
   log(`=== ${scenario}${mods.length ? ' (' + mods.map((m) => m.id).join(', ') + ')' : ''}`)
   const startServer = async (logFile) => {
     const child = startProcess('server', serverCommand(),
-      [`-Xmx${def.serverMemory || '2G'}`, '-Ddirectauth.modtests=server'], ['nogui'], dirs.server, logFile)
+      [`-Xmx${def.serverMemory || '2G'}`], ['nogui'], dirs.server, logFile)
     if (!await waitForLog(logFile, /RCON running/, 600000, child)) {
       await stopProcess(child)
       throw new Error(`server did not start, see ${logFile}`)
