@@ -113,7 +113,7 @@ public abstract class MixinServerLoginPacketListenerImpl {
      * Perfil con el que entra el jugador, offline o confirmado por Mojang. Se llama en el hilo del
      * servidor (offline) o en el de autenticación (premium).
      * <p>
-     * Una cuenta conserva su UUID al cambiar de modo ({@link UserData#getPlayerUUID()}): pasar al
+     * Una cuenta conserva su UUID al cambiar de modo ({@link UserData#getAccountUUID()}): pasar al
      * Modo Online solo cambia cómo se identifica el jugador. Así no hay que mover ficheros, que las
      * mods con los datos en memoria sobrescribirían (y que no tratarían a una UUID nueva como un
      * jugador nuevo: kits de inicio, equipos, misiones...). Se conserva la skin de Mojang.
@@ -133,7 +133,7 @@ public abstract class MixinServerLoginPacketListenerImpl {
             return profile;
         }
         UserData data = DirectAuth.getLoginManager().peekPreLoadedData(this.requestedUsername);
-        if (data == null || data.getPlayerUUID() == null) return profile;
+        if (data == null || data.getAccountUUID() == null) return profile;
         if (data.isPremium()
                 ? !fromMojang || !profile.getId().toString().equalsIgnoreCase(data.getOnlineUUID())
                 : this.state != ServerLoginPacketListenerImpl.State.HELLO) {
@@ -142,11 +142,10 @@ public abstract class MixinServerLoginPacketListenerImpl {
 
         UUID accountUUID;
         try {
-            accountUUID = UUID.fromString(data.getPlayerUUID());
+            accountUUID = UUID.fromString(data.getAccountUUID());
         } catch (IllegalArgumentException e) {
-            // Solo si se editó la DB a mano. Entrar con otra UUID sería empezar de cero.
-            DirectAuth.LOGGER.error("DirectAuth: Invalid playerUUID '{}' for {}", data.getPlayerUUID(), data.getUsername());
-            this.disconnect(Component.literal(DirectAuth.getConfig().getLang().errInternal));
+            // Solo si se editó la DB a mano. ConnectionHandler no lo deja entrar con otra UUID.
+            DirectAuth.LOGGER.error("DirectAuth: Invalid UUID '{}' for account {}", data.getAccountUUID(), data.getUsername());
             return profile;
         }
         if (accountUUID.equals(profile.getId())) return profile;

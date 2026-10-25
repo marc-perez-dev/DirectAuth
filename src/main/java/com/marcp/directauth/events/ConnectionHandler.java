@@ -92,17 +92,30 @@ public class ConnectionHandler {
 
         // Caso Premium: Mojang tiene que haber confirmado ESTA cuenta en el login. La UUID del
         // jugador no lo demuestra: la cuenta juega con la que ya tenía antes del Modo Online.
-        if (userData != null && userData.isPremium()) {
+        boolean premium = userData != null && userData.isPremium();
+        if (premium) {
             UUID verifiedUUID = ((MojangVerifiedConnection) player.connection.getConnection()).directAuth$getMojangUUID();
-
-            if (verifiedUUID != null && verifiedUUID.toString().equalsIgnoreCase(userData.getOnlineUUID())) {
-                DirectAuth.getLoginManager().setAuthenticated(player, true);
-                player.sendSystemMessage(Component.literal(DirectAuth.getConfig().getLang().msgAutoLogin));
-                isAuthenticated = true;
-            } else {
+            if (verifiedUUID == null || !verifiedUUID.toString().equalsIgnoreCase(userData.getOnlineUUID())) {
                 player.connection.disconnect(Component.literal(DirectAuth.getConfig().getLang().msgPremiumError));
                 return;
             }
+        }
+
+        // El login tiene que haberle dado la UUID de la cuenta (MixinServerLoginPacketListenerImpl).
+        // Si no (sus datos se descartaron a mitad del login), las mods lo tratarían como un jugador
+        // nuevo con esa otra UUID: mejor que vuelva a entrar.
+        String accountUUID = userData != null ? userData.getAccountUUID() : null;
+        if (accountUUID != null && !accountUUID.equalsIgnoreCase(player.getStringUUID())
+                && !player.getServer().usesAuthentication() && !player.getServer().isSingleplayerOwner(player.getGameProfile())) {
+            DirectAuth.LOGGER.warn("DirectAuth: {} joined as {} instead of the account's UUID {}; disconnecting", player.getGameProfile().getName(), player.getStringUUID(), accountUUID);
+            player.connection.disconnect(Component.literal(DirectAuth.getConfig().getLang().errInternal));
+            return;
+        }
+
+        if (premium) {
+            DirectAuth.getLoginManager().setAuthenticated(player, true);
+            player.sendSystemMessage(Component.literal(DirectAuth.getConfig().getLang().msgAutoLogin));
+            isAuthenticated = true;
         }
 
         // INTENTO DE RESTAURACIÓN DE SESIÓN (solo si la cuenta sigue existiendo)

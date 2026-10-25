@@ -557,7 +557,10 @@ const rconTest = async (cmd) => /Test passed/.test(await T.rcon(cmd))
   const skinSent = (b, textures) => JSON.stringify(b.playerInfo).includes(textures)
 
   await test('premium: /online keeps the account UUID, moves nothing and keeps the player connected', async () => {
+    // Los objetos que otras pruebas tiran en el spawn acabarían en su inventario
+    await T.rcon('kill @e[type=item]')
     const b = await register('Notch', '127.0.0.40')
+    await T.rcon('clear Notch')
     await T.rcon('give Notch minecraft:diamond 7')
     await T.sleep(300)
     T.send(b, '/online')
@@ -658,6 +661,20 @@ const rconTest = async (cmd) => /Test passed/.test(await T.rcon(cmd))
     T.send(b, `/online ${PW}`)
     await T.expect(b, L.errMojangNotFound, 10000)
     T.assert(T.user('Notch#').isPremium === 0, 'Notch# became premium')
+  })
+
+  await test('premium: a join that does not get the account UUID is turned away', async () => {
+    const b = await register('BadUuid', '127.0.0.46')
+    await logout(b)
+    // UUID ilegible (DB editada a mano): el login no puede darle la de la cuenta
+    T.db("UPDATE users SET playerUUID = 'abc' WHERE username = 'baduuid'", [], { write: true })
+    const logAt = T.serverLogSize()
+    const j = await T.join('BadUuid', '127.0.0.46')
+    await T.sleep(500)
+    T.assert(!j.connected, 'joined with another UUID')
+    T.assert(T.serverLogSince(logAt).includes('instead of the account'), 'no warning in the server log')
+    T.db("UPDATE users SET playerUUID = NULL WHERE username = 'baduuid'", [], { write: true })
+    await login('BadUuid', '127.0.0.46')
   })
 
   // ========== Config ==========

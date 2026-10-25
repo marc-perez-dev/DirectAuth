@@ -60,7 +60,7 @@ public class PremiumCommand {
                     String onlineUUID = MojangAPI.formatUUID(uuid);
                     if (onlineUUID == null) return CompletableFuture.completedFuture(Status.NO_MOJANG_ACCOUNT);
                     // La cuenta seguirá jugando con la UUID con la que juega (ver UserData)
-                    String playerUUID = user.getPlayerUUID() != null ? user.getPlayerUUID() : currentUUID;
+                    String playerUUID = user.getAccountUUID() != null ? user.getAccountUUID() : currentUUID;
                     return DirectAuth.getDatabase().setOnlineModeAsync(username, true, onlineUUID, playerUUID)
                         .thenApply(updated -> updated ? Status.ENABLED : Status.NOT_FOUND);
                 }).thenCompose(status -> status);

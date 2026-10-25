@@ -26,6 +26,12 @@ public class UserData {
     public boolean isPremium() { return isPremium; }
     public String getOnlineUUID() { return onlineUUID; }
     public String getPlayerUUID() { return playerUUID; }
+
+    /** UUID con la que juega la cuenta, o null si es la que da el login offline de su nombre. */
+    public String getAccountUUID() {
+        if (playerUUID != null) return playerUUID;
+        return isPremium ? onlineUUID : null; // Convertida antes de 1.3.1: sus datos están bajo la de Mojang
+    }
     
     public void setPasswordHash(String hash) { this.passwordHash = hash; }
     public void setPremium(boolean premium) { this.isPremium = premium; }

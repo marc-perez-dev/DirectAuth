@@ -184,7 +184,7 @@ public class DirectAuthCommand {
             reportModeUpdated(source, username, true); // Ya estaba activado
             return;
         }
-        if (userData.getPlayerUUID() == null && authenticatedPlayerOf(source, username) == null) {
+        if (userData.getAccountUUID() == null && authenticatedPlayerOf(source, username) == null) {
             source.sendFailure(Component.literal(LangConfig.format(DirectAuth.getConfig().getLang().errAdminEnableNeedsPlayer, username)));
             return;
         }
@@ -206,7 +206,7 @@ public class DirectAuthCommand {
                 source.sendFailure(Component.literal(DirectAuth.getConfig().getLang().errMojangNotFound));
                 return;
             }
-            String playerUUID = userData.getPlayerUUID();
+            String playerUUID = userData.getAccountUUID();
             if (playerUUID == null) {
                 ServerPlayer target = authenticatedPlayerOf(source, username);
                 if (target == null) { // Se desconectó mientras consultábamos a Mojang
@@ -228,8 +228,7 @@ public class DirectAuthCommand {
             reportModeUpdated(source, username, false); // Ya estaba desactivado
             return;
         }
-        String playerUUID = userData.getPlayerUUID() != null ? userData.getPlayerUUID() : userData.getOnlineUUID();
-        saveOnlineMode(source, username, false, null, playerUUID);
+        saveOnlineMode(source, username, false, null, userData.getAccountUUID());
     }
 
     private static void saveOnlineMode(CommandSourceStack source, String username, boolean premium, String onlineUUID, String playerUUID) {
