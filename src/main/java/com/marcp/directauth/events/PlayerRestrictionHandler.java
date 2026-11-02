@@ -129,18 +129,8 @@ public final class PlayerRestrictionHandler {
         // lista de jugadores: se recorre la lista viva y solo se copian ellos, normalmente ninguno.
         List<ServerPlayer> jailed = null;
         for (ServerPlayer player : server.getPlayerList().getPlayers()) {
-            // Como EntityTickEvent: solo jugadores que el nivel sigue tickeando (un jugador muerto
-            // sale del nivel tras la animación de muerte y su tickCount deja de avanzar)
-            if (player.isRemoved()) {
-                // Pero EntityTickEvent.Post aún se dispara en el tick en el que el nivel lo saca, y
-                // en main ahí se ancla: un jugador que entra muerto sale en su primer tick, antes
-                // de llegar aquí. Sin ancla, al reaparecer se anclaría donde lo deje vanilla (al
-                // azar alrededor del spawn) y no en el spawn al que lo llevó ConnectionHandler.
-                if (isNotAuth(player)) {
-                    anchorPositions.computeIfAbsent(player.getUUID(), id -> new Anchor(player.level().dimension(), player.position()));
-                }
-                continue;
-            }
+            // Los muertos que el nivel ya sacó (ver tickJailedPlayer) también: si no, nadie
+            // expulsaría a quien se queda en la pantalla de muerte de una cuenta ajena
             if (isNotAuth(player)) {
                 if (jailed == null) jailed = new ArrayList<>();
                 jailed.add(player);
@@ -149,18 +139,32 @@ public final class PlayerRestrictionHandler {
             }
         }
         if (jailed != null) {
-            for (ServerPlayer player : jailed) tickJailedPlayer(player);
+            for (ServerPlayer player : jailed) tickJailedPlayer(server, player);
         }
     }
 
-    private static void tickJailedPlayer(ServerPlayer player) {
+    private static void tickJailedPlayer(MinecraftServer server, ServerPlayer player) {
         if (player.hasDisconnected()) return; // expulsado en este mismo tick
+        // Un jugador muerto sale del nivel tras la animación de muerte y su tickCount deja de
+        // avanzar: para él cuenta el tick del servidor
+        int ticks = player.isRemoved() ? server.getTickCount() : player.tickCount;
         // Verificar Timeout (Kick) cada 20 ticks (1 segundo) para no saturar
-        if (player.tickCount % 20 == 0) {
+        if (ticks % 20 == 0) {
             if (DirectAuth.getLoginManager().hasTimedOut(player)) {
                 player.connection.disconnect(Component.literal(DirectAuth.getConfig().getLang().msgTimeout));
                 return; // Salimos para no ejecutar el resto de lógica
             }
+        }
+
+        if (player.isRemoved()) {
+            // Muerto y fuera del nivel: no se mueve, solo se ancla si aún no lo estaba. Como
+            // EntityTickEvent.Post en main, que aún se dispara en el tick en el que el nivel lo
+            // saca: un jugador que entra muerto sale en su primer tick, antes de llegar aquí. Sin
+            // ancla, al reaparecer se anclaría donde lo deje vanilla (al azar alrededor del spawn)
+            // y no en el spawn al que lo llevó ConnectionHandler.
+            anchorPositions.computeIfAbsent(player.getUUID(), id -> new Anchor(player.level().dimension(), player.position()));
+            if (ticks % 100 == 0) sendReminder(player);
+            return;
         }
 
         // Volvió a montar en su vehículo al entrar (MixinEntityStartRiding) y aún no se le ha
@@ -187,12 +191,11 @@ public final class PlayerRestrictionHandler {
         
         // Removed player.clearFire() as fire ticks will be restored on authentication.
         
-        if (player.tickCount % 100 == 0) {
-            player.displayClientMessage(
-                Component.literal(DirectAuth.getConfig().getLang().msgAuthReminder),
-                true 
-            );
-        }
+        if (player.tickCount % 100 == 0) sendReminder(player);
+    }
+
+    private static void sendReminder(ServerPlayer player) {
+        player.displayClientMessage(Component.literal(DirectAuth.getConfig().getLang().msgAuthReminder), true);
     }
 
     /**
