@@ -1,6 +1,7 @@
 package com.marcp.directauth.network;
 
 import com.marcp.directauth.DirectAuth;
+import com.marcp.directauth.auth.AuthTasks;
 import com.marcp.directauth.events.PlayerRestrictionHandler;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
@@ -251,10 +252,7 @@ public final class JailTraffic {
             menu = held.menu;
         }
         if (player.connection != held.connection || player.hasDisconnected()) return;
-        // Todo en este orden y sin salir de aquí, como en main: release() corre en el hilo del
-        // servidor, y ahí MinecraftServer.execute (con el que Fabric API pasa cada payload a su
-        // receptor) lo ejecuta en el acto en vez de encolarlo. Así los receptores de lo retenido
-        // terminan antes de abrir el menú aplazado.
+        // En este orden, como en main: pantallas, lo retenido y el menú aplazado.
         for (Deferred deferred : toClient) player.connection.send(deferred.packet(), deferred.sendListener());
         for (ServerboundCustomPayloadPacket packet : fromClient) {
             try {
@@ -266,7 +264,16 @@ public final class JailTraffic {
                     packet.payload().type().id(), player.getGameProfile().getName(), e);
             }
         }
-        if (menu != null) player.openMenu(menu);
+        if (menu != null) {
+            // Fabric API pasa cada payload a su receptor con MinecraftServer.execute, que en el hilo
+            // del servidor lo ejecuta en el acto, salvo dentro de una tarea de su cola (el resultado
+            // de /login y /register llega así, ver AuthTasks): ahí lo encola. El menú va por el mismo
+            // camino para abrirse después de esos receptores, como en main.
+            ServerGamePacketListenerImpl connection = held.connection;
+            AuthTasks.onServerThread(player.getServer()).execute(() -> {
+                if (!connection.player.hasDisconnected()) connection.player.openMenu(menu);
+            });
+        }
     }
 
     /** El jugador se ha desconectado: lo retenido de esa conexión no se procesa nunca. */
