@@ -18,6 +18,7 @@
     "MixinServerGamePacketListenerCustomPayload",
     "MixinConnection",
     "MixinServerPlayerOpenMenu",
+    "MixinPlayerList",
     "MixinNetworkHooksOpenScreen",
     "MixinSimpleChannel",
     "MixinPixelmonSimpleChannel"
