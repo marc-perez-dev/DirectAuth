@@ -3,7 +3,6 @@ package com.marcp.directauth.network;
 import com.marcp.directauth.DirectAuth;
 import com.marcp.directauth.events.PlayerRestrictionHandler;
 import net.minecraft.network.PacketSendListener;
-import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.protocol.Packet;
 import net.minecraft.network.protocol.common.ClientboundCustomPayloadPacket;
 import net.minecraft.network.protocol.common.ServerboundCustomPayloadPacket;
@@ -13,7 +12,6 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.server.network.ServerGamePacketListenerImpl;
 import net.minecraft.world.MenuProvider;
-import net.neoforged.neoforge.network.registration.NetworkRegistry;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
@@ -39,8 +37,6 @@ import java.util.function.Consumer;
 public final class JailTraffic {
     private static final Map<UUID, Held> HELD = new ConcurrentHashMap<>();
 
-    private record MenuRequest(MenuProvider provider, @Nullable Consumer<RegistryFriendlyByteBuf> extraData) {}
-
     private record Deferred(Packet<?> packet, @Nullable PacketSendListener sendListener) {}
 
     /** Lo retenido de una conexión concreta (una reconexión empieza de cero). */
@@ -48,7 +44,7 @@ public final class JailTraffic {
         final ServerGamePacketListenerImpl connection;
         final Map<ResourceLocation, ServerboundCustomPayloadPacket> fromClient = new LinkedHashMap<>();
         final Map<ResourceLocation, Deferred> toClient = new LinkedHashMap<>();
-        @Nullable MenuRequest menu;
+        @Nullable MenuProvider menu;
         boolean released;
 
         Held(ServerGamePacketListenerImpl connection) {
@@ -69,7 +65,7 @@ public final class JailTraffic {
      * Se comprueba bajo el candado porque release() y discard() corren en otro hilo.
      */
     private static boolean store(ServerGamePacketListenerImpl connection, Consumer<Held> add) {
-        if (!connection.getConnection().isConnected()) return false; // discard() ya pasó o va a pasar
+        if (!connection.connection.isConnected()) return false; // discard() ya pasó o va a pasar
         UUID uuid = connection.player.getUUID();
         Held held = HELD.compute(uuid, (key, current) -> current == null || current.connection != connection ? new Held(connection) : current);
         synchronized (held) {
@@ -82,9 +78,14 @@ public final class JailTraffic {
         }
     }
 
-    /** Payloads que nunca se retienen: los de Minecraft no llegan aquí; estos son de NeoForge. */
+    /**
+     * Payloads que nunca se retienen ni se aplazan: los de Minecraft (registro de canales, marca del
+     * cliente...) y los de Fabric API y el protocolo común entre loaders ("c").
+     */
     private static boolean isLoaderPayload(ResourceLocation id) {
-        return id.getNamespace().equals("neoforge");
+        String namespace = id.getNamespace();
+        return namespace.equals("minecraft") || namespace.equals("c")
+            || namespace.equals("fabric") || namespace.startsWith("fabric-");
     }
 
     /**
@@ -120,7 +121,7 @@ public final class JailTraffic {
         if (packet instanceof ClientboundCustomPayloadPacket custom) {
             return shouldDefer(connection, custom) && defer(connection, custom, sendListener);
         }
-        // PacketDistributor junta varios payloads en un bundle
+        // Un bundle puede llevar payloads (p. ej. los datos de una entidad al empezar a verla)
         if (packet instanceof ClientboundBundlePacket bundle) {
             List<Packet<? super ClientGamePacketListener>> rest = new ArrayList<>();
             List<ClientboundCustomPayloadPacket> toDefer = new ArrayList<>();
@@ -152,7 +153,7 @@ public final class JailTraffic {
 
     private static boolean shouldDefer(ServerGamePacketListenerImpl connection, ClientboundCustomPayloadPacket packet) {
         ResourceLocation id = packet.payload().type().id();
-        if (id.getNamespace().equals("minecraft") || isLoaderPayload(id)) return false;
+        if (isLoaderPayload(id)) return false;
         boolean defer = DirectAuth.getConfig().deferredScreenPayloads.contains(id.toString());
         if (DirectAuth.getConfig().logJailPayloads) {
             DirectAuth.LOGGER.info("DirectAuth: payload {} to unauthenticated {}{}", id,
@@ -174,8 +175,8 @@ public final class JailTraffic {
      * Devuelve false si el jugador ya no está en la jaula y el menú debe abrirse ahora.
      * Quien abre el menú recibe "no abierto": lo que enviara después con su id no se repite.
      */
-    public static boolean deferMenu(ServerPlayer player, MenuProvider provider, @Nullable Consumer<RegistryFriendlyByteBuf> extraData) {
-        return store(player.connection, held -> held.menu = new MenuRequest(provider, extraData));
+    public static boolean deferMenu(ServerPlayer player, MenuProvider provider) {
+        return store(player.connection, held -> held.menu = provider);
     }
 
     /**
@@ -187,7 +188,7 @@ public final class JailTraffic {
         if (held == null) return;
         List<Deferred> toClient;
         List<ServerboundCustomPayloadPacket> fromClient;
-        MenuRequest menu;
+        MenuProvider menu;
         synchronized (held) {
             HELD.remove(player.getUUID(), held);
             held.released = true;
@@ -199,13 +200,15 @@ public final class JailTraffic {
         for (Deferred deferred : toClient) player.connection.send(deferred.packet(), deferred.sendListener());
         for (ServerboundCustomPayloadPacket packet : fromClient) {
             try {
-                NetworkRegistry.handleModdedPayload(player.connection, packet);
+                // Por el camino normal (Fabric API se lo pasa a la mod), ya sin retenerlo: el
+                // jugador está autenticado
+                player.connection.handleCustomPayload(packet);
             } catch (RuntimeException e) {
                 DirectAuth.LOGGER.error("DirectAuth: Could not process held payload {} from {}",
                     packet.payload().type().id(), player.getGameProfile().getName(), e);
             }
         }
-        if (menu != null) player.openMenu(menu.provider(), menu.extraData());
+        if (menu != null) player.openMenu(menu);
     }
 
     /** El jugador se ha desconectado: lo retenido de esa conexión no se procesa nunca. */

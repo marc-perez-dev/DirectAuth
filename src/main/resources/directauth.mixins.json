@@ -1,19 +1,26 @@
 {
   "required": true,
+  "minVersion": "0.8",
   "package": "com.marcp.directauth.mixin",
+  "plugin": "com.marcp.directauth.mixin.DirectAuthMixinPlugin",
   "compatibilityLevel": "JAVA_21",
-  "refmap": "directauth.refmap.json",
   "mixins": [
     "MixinServerLoginPacketListenerImpl",
     "MixinLivingEntityEffects",
     "MixinServerPlayerRespawn",
     "MixinServerGamePacketListenerImpl",
     "MixinRconConsoleSource",
-    "MixinItemPhysicPackets",
     "MixinServerCommonPacketListenerImpl",
     "MixinConnection",
     "MixinServerPlayerOpenMenu",
-    "ServerGamePacketListenerAccessor"
+    "ServerGamePacketListenerAccessor",
+    "MixinPlayerList",
+    "MixinCommands",
+    "MixinLivingEntityHeal",
+    "MixinPlayerDamage",
+    "MixinEntityStartRiding",
+    "MixinItemEntityPickup",
+    "MixinExperienceOrbPickup"
   ],
   "injectors": {
     "defaultRequire": 1

@@ -14,10 +14,12 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  * Compatibilidad con ItemPhysic: con "throw.enabled" el cliente no manda la Q como
  * ServerboundPlayerActionPacket sino como DropPacket por la red de CreativeCore, que suelta el
  * objeto sin pasar por handlePlayerAction (ver MixinServerGamePacketListenerImpl). PickupPacket
- * recoge objetos sin EntityItemPickupEvent. Ambos se bloquean para jugadores sin autenticar.
+ * recoge objetos sin pasar por ItemEntity.playerTouch. Ambos se bloquean para jugadores sin autenticar.
  *
  * @Pseudo + require = 0: sin ItemPhysic instalado el mixin simplemente no se aplica. Los métodos
  * son del mod (no se remapean); CreativeCore los ejecuta en el hilo del servidor (enqueueWork).
+ * El método se nombra sin descriptor: con remap = false no se traduciría ServerPlayer a los nombres
+ * intermediary con los que corre Fabric en producción (el parámetro del handler sí se remapea).
  */
 @Pseudo
 @Mixin(targets = {
@@ -26,7 +28,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 }, remap = false)
 public abstract class MixinItemPhysicPackets {
 
-    @Inject(method = "executeServer(Lnet/minecraft/server/level/ServerPlayer;)V", at = @At("HEAD"), cancellable = true, require = 0)
+    @Inject(method = "executeServer", at = @At("HEAD"), cancellable = true, require = 0)
     private void directAuth$blockWhileUnauthenticated(ServerPlayer player, CallbackInfo ci) {
         if (PlayerRestrictionHandler.isRestricted(player)) {
             ci.cancel();
