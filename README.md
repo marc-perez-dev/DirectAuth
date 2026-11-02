@@ -4,7 +4,7 @@
 
 ![Build Status](https://github.com/marc-perez-dev/DirectAuth/actions/workflows/build.yml/badge.svg)
 
-DirectAuth is a **server-side** authentication mod for Minecraft Forge 1.20.1 (Forge 47.x, Java 17). This branch is the Forge 1.20.1 port; the NeoForge 1.21.1 version lives on [`main`](https://github.com/marc-perez-dev/DirectAuth/tree/main). It provides a secure login system for offline-mode servers, with optional auto-login for players who own a legitimate Minecraft account.
+DirectAuth is a **server-side** authentication mod for Minecraft Forge 1.20.1 (Forge 47.x, Java 17). This branch is the Forge 1.20.1 port; the NeoForge 1.21.1 version lives on [`main`](https://github.com/marc-perez-dev/DirectAuth/tree/main) and the Fabric 1.21.1 one on [`fabric-1.21.1`](https://github.com/marc-perez-dev/DirectAuth/tree/fabric-1.21.1). It provides a secure login system for offline-mode servers, with optional auto-login for players who own a legitimate Minecraft account.
 
 It is strictly server-side: clients do **not** need to install this mod to join. Players connect with whatever the rest of the server requires (a vanilla client if no other mod needs one, or the modpack's client).
 
