@@ -50,6 +50,9 @@ public final class PlayerRestrictionHandler {
     /** Levanta las restricciones de un jugador que acaba de autenticarse. */
     public static void release(ServerPlayer player) {
         removeAnchor(player);
+        // El vehículo en el que salió, apartado mientras estaba sin autenticar (con la posición ya
+        // restaurada, como en PlayerList.placeNewPlayer)
+        JailedVehicles.restore(player);
         // Resincronizar HUD de efectos (limpiados al entrar en limbo)
         resyncEffectsToClient(player);
         // Pantallas y menús de otras mods aplazados, y lo que su cliente les envió en la jaula
@@ -145,9 +148,9 @@ public final class PlayerRestrictionHandler {
 
     private static void tickJailedPlayer(MinecraftServer server, ServerPlayer player) {
         if (player.hasDisconnected()) return; // expulsado en este mismo tick
-        // Un jugador muerto sale del nivel tras la animación de muerte y su tickCount deja de
-        // avanzar: para él cuenta el tick del servidor
-        int ticks = player.isRemoved() ? server.getTickCount() : player.tickCount;
+        // Con el tick del servidor: el de un jugador muerto deja de avanzar al salir del nivel tras
+        // la animación de muerte, y aun así tiene que expulsarse
+        int ticks = server.getTickCount();
         // Verificar Timeout (Kick) cada 20 ticks (1 segundo) para no saturar
         if (ticks % 20 == 0) {
             if (DirectAuth.getLoginManager().hasTimedOut(player)) {
@@ -155,6 +158,7 @@ public final class PlayerRestrictionHandler {
                 return; // Salimos para no ejecutar el resto de lógica
             }
         }
+        if (ticks % 100 == 0) sendReminder(player);
 
         if (player.isRemoved()) {
             // Muerto y fuera del nivel: no se mueve, solo se ancla si aún no lo estaba. Como
@@ -163,13 +167,8 @@ public final class PlayerRestrictionHandler {
             // ancla, al reaparecer se anclaría donde lo deje vanilla (al azar alrededor del spawn)
             // y no en el spawn al que lo llevó ConnectionHandler.
             anchorPositions.computeIfAbsent(player.getUUID(), id -> new Anchor(player.level().dimension(), player.position()));
-            if (ticks % 100 == 0) sendReminder(player);
             return;
         }
-
-        // Volvió a montar en su vehículo al entrar (MixinEntityStartRiding) y aún no se le ha
-        // teleportado al spawn: se baja, y el vehículo se queda donde estaba
-        if (player.isPassenger()) player.stopRiding();
 
         UUID uuid = player.getUUID();
 
@@ -190,26 +189,10 @@ public final class PlayerRestrictionHandler {
         }
         
         // Removed player.clearFire() as fire ticks will be restored on authentication.
-        
-        if (player.tickCount % 100 == 0) sendReminder(player);
     }
 
     private static void sendReminder(ServerPlayer player) {
         player.displayClientMessage(Component.literal(DirectAuth.getConfig().getLang().msgAuthReminder), true);
-    }
-
-    /**
-     * Jugador al que PlayerList.placeNewPlayer está colocando (MixinPlayerList), solo en el hilo
-     * del servidor. Mientras tanto puede volver a montar en su vehículo (MixinEntityStartRiding).
-     */
-    private static ServerPlayer beingPlaced;
-
-    public static void setBeingPlaced(ServerPlayer player) {
-        beingPlaced = player;
-    }
-
-    public static boolean isBeingPlaced(Object entity) {
-        return entity != null && entity == beingPlaced;
     }
 
     /**

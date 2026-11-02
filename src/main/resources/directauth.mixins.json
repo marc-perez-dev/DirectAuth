@@ -15,6 +15,7 @@
     "MixinServerPlayerOpenMenu",
     "ServerGamePacketListenerAccessor",
     "MixinPlayerList",
+    "MixinServerPlayerSave",
     "MixinCommands",
     "MixinLivingEntityHeal",
     "MixinPlayerDamage",
