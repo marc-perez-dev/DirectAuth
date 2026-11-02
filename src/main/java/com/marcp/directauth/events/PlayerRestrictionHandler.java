@@ -6,6 +6,7 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.network.protocol.game.ClientboundRemoveMobEffectPacket;
 import net.minecraft.network.protocol.game.ClientboundUpdateMobEffectPacket;
 import net.minecraft.resources.ResourceKey;
+import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.level.Level;
@@ -98,10 +99,25 @@ public class PlayerRestrictionHandler {
     @SubscribeEvent
     public void onServerTick(TickEvent.ServerTickEvent event) {
         if (event.phase != TickEvent.Phase.END) return;
-        for (ServerPlayer player : List.copyOf(event.getServer().getPlayerList().getPlayers())) {
-            // Como EntityTickEvent: solo jugadores que el nivel sigue tickeando (un jugador muerto
-            // sale del nivel tras la animación de muerte y su tickCount deja de avanzar)
+        MinecraftServer server = event.getServer();
+        for (ServerPlayer player : List.copyOf(server.getPlayerList().getPlayers())) {
+            // Como EntityTickEvent: solo jugadores que el nivel sigue tickeando. Un jugador muerto
+            // sale del nivel tras la animación de muerte y su tickCount deja de avanzar, pero el
+            // timeout le sigue contando: si no, nadie expulsaría a quien se queda en la pantalla
+            // de muerte de una cuenta ajena
             if (!player.isRemoved()) tickPlayer(player);
+            else tickRemovedPlayer(server, player);
+        }
+    }
+
+    /** Muerto y fuera del nivel: solo el timeout y el recordatorio, con el tick del servidor. */
+    private void tickRemovedPlayer(MinecraftServer server, ServerPlayer player) {
+        if (player.hasDisconnected() || !isNotAuth(player)) return;
+        int ticks = server.getTickCount();
+        if (ticks % 20 == 0 && DirectAuth.getLoginManager().hasTimedOut(player)) {
+            player.connection.disconnect(Component.literal(DirectAuth.getConfig().getLang().msgTimeout));
+        } else if (ticks % 100 == 0) {
+            sendReminder(player);
         }
     }
 
@@ -139,16 +155,15 @@ public class PlayerRestrictionHandler {
             
             // Removed player.clearFire() as fire ticks will be restored on authentication.
             
-            if (player.tickCount % 100 == 0) {
-                player.displayClientMessage(
-                    Component.literal(DirectAuth.getConfig().getLang().msgAuthReminder),
-                    true 
-                );
-            }
+            if (player.tickCount % 100 == 0) sendReminder(player);
         } 
         else if (anchorPositions.containsKey(player.getUUID())) {
             anchorPositions.remove(player.getUUID());
         }
+    }
+
+    private static void sendReminder(ServerPlayer player) {
+        player.displayClientMessage(Component.literal(DirectAuth.getConfig().getLang().msgAuthReminder), true);
     }
 
     /**
