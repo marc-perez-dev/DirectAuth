@@ -128,12 +128,7 @@ public class PlayerRestrictionHandler {
                 
                 // Removed player.clearFire() as fire ticks will be restored on authentication.
                 
-                if (player.tickCount % 100 == 0) {
-                    player.displayClientMessage(
-                        Component.literal(DirectAuth.getConfig().getLang().msgAuthReminder),
-                        true 
-                    );
-                }
+                if (player.tickCount % 100 == 0) sendReminder(player);
             } 
             else if (anchorPositions.containsKey(player.getUUID())) {
                 anchorPositions.remove(player.getUUID());
@@ -143,26 +138,39 @@ public class PlayerRestrictionHandler {
 
     /**
      * Los jugadores en la jaula que no reciben EntityTickEvent: los pasajeros (el nivel los tickea
-     * con rideTick).
+     * con rideTick) y los muertos, que salen del nivel tras la animación de muerte hasta que pulsan
+     * "Reaparecer". Sin esto, nadie expulsaría a quien se queda en la pantalla de muerte de una
+     * cuenta ajena; para él cuenta el tick del servidor.
      */
     @SubscribeEvent
     public void onServerTick(ServerTickEvent.Post event) {
         MinecraftServer server = event.getServer();
-        // Solo se copian ellos, normalmente ninguno
+        // Expulsar a un jugador lo quita de la lista: solo se copian ellos, normalmente ninguno
         List<ServerPlayer> jailed = null;
         for (ServerPlayer player : server.getPlayerList().getPlayers()) {
-            if (player.isPassenger() && isNotAuth(player)) {
+            if ((player.isPassenger() || player.isRemoved()) && isNotAuth(player)) {
                 if (jailed == null) jailed = new ArrayList<>();
                 jailed.add(player);
             }
         }
         if (jailed == null) return;
+        int ticks = server.getTickCount();
         for (ServerPlayer player : jailed) {
             if (player.hasDisconnected()) continue;
-            // Volvió a montar en su vehículo al entrar (ver onMount) y no se le ha teleportado
-            // al spawn: se baja, y el vehículo se queda donde estaba
-            player.stopRiding();
+            if (player.isPassenger()) {
+                // Volvió a montar en su vehículo al entrar (ver onMount) y no se le ha teleportado
+                // al spawn: se baja, y el vehículo se queda donde estaba
+                player.stopRiding();
+            } else if (ticks % 20 == 0 && DirectAuth.getLoginManager().hasTimedOut(player)) {
+                player.connection.disconnect(Component.literal(DirectAuth.getConfig().getLang().msgTimeout));
+            } else if (ticks % 100 == 0) {
+                sendReminder(player);
+            }
         }
+    }
+
+    private static void sendReminder(ServerPlayer player) {
+        player.displayClientMessage(Component.literal(DirectAuth.getConfig().getLang().msgAuthReminder), true);
     }
 
     /**
