@@ -131,7 +131,16 @@ public final class PlayerRestrictionHandler {
         for (ServerPlayer player : server.getPlayerList().getPlayers()) {
             // Como EntityTickEvent: solo jugadores que el nivel sigue tickeando (un jugador muerto
             // sale del nivel tras la animación de muerte y su tickCount deja de avanzar)
-            if (player.isRemoved()) continue;
+            if (player.isRemoved()) {
+                // Pero EntityTickEvent.Post aún se dispara en el tick en el que el nivel lo saca, y
+                // en main ahí se ancla: un jugador que entra muerto sale en su primer tick, antes
+                // de llegar aquí. Sin ancla, al reaparecer se anclaría donde lo deje vanilla (al
+                // azar alrededor del spawn) y no en el spawn al que lo llevó ConnectionHandler.
+                if (isNotAuth(player)) {
+                    anchorPositions.computeIfAbsent(player.getUUID(), id -> new Anchor(player.level().dimension(), player.position()));
+                }
+                continue;
+            }
             if (isNotAuth(player)) {
                 if (jailed == null) jailed = new ArrayList<>();
                 jailed.add(player);
