@@ -39,14 +39,15 @@ public class ModConfig {
     // Ids por defecto de las listas de otras mods, con la versión de estos valores por defecto en la
     // que se añadió cada uno. Una config escrita con una versión anterior recibe al cargarse los que
     // le falten (los usuarios no editan la config a mano); los que el admin quitó después no vuelven.
+    // Ids de Fabric, cada uno comprobado con su escenario en tools/mod-tests. La versión 1 es la
+    // lista con la que empieza el port de Fabric (no hay configs de Fabric anteriores): un id nuevo
+    // va con OTHER_MODS_DEFAULTS + 1.
     private static final int OTHER_MODS_DEFAULTS = 1;
     private static final Map<String, Integer> DEFAULT_SCREEN_PAYLOADS = new LinkedHashMap<>();
     private static final Map<String, Integer> DEFAULT_HELD_EXCEPTIONS = new LinkedHashMap<>();
     static {
-        DEFAULT_SCREEN_PAYLOADS.put("neoorigins:open_origin_screen", 1);                  // Neo Origins: elección de origen
+        DEFAULT_SCREEN_PAYLOADS.put("origins:s2c/open_origin_screen", 1);                 // Origins: elección de origen
         DEFAULT_SCREEN_PAYLOADS.put("mca:open_destiny_gui_request", 1);                   // MCA Reborn: Destiny
-        DEFAULT_SCREEN_PAYLOADS.put("pixelmon:starterlistpacket", 1);                     // Pixelmon: elección de inicial
-        DEFAULT_SCREEN_PAYLOADS.put("dragonsurvival:open_dragon_altar", 1);               // Dragon Survival: altar de dragón
         DEFAULT_SCREEN_PAYLOADS.put("starterkit:to_client_receive_kit_data_packet", 1);   // Starter Kit: elección de kit
         DEFAULT_HELD_EXCEPTIONS.put("starterkit:to_server_announce_mod_is_installed_packet", 1); // Starter Kit: "tengo la mod" (5 s de plazo)
     }
