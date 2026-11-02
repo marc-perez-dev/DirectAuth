@@ -13,7 +13,7 @@ public abstract class MixinLivingEntityHeal {
 
     @Inject(method = "heal", at = @At("HEAD"), cancellable = true)
     private void directAuth$noHealWhileUnauthenticated(float healAmount, CallbackInfo ci) {
-        if (PlayerRestrictionHandler.onEntityHeal(this)) {
+        if (PlayerRestrictionHandler.isRestricted(this)) {
             ci.cancel();
         }
     }

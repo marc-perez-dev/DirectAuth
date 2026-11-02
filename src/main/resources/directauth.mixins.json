@@ -20,7 +20,8 @@
     "MixinPlayerDamage",
     "MixinEntityStartRiding",
     "MixinItemEntityPickup",
-    "MixinExperienceOrbPickup"
+    "MixinExperienceOrbPickup",
+    "MixinPlayerAttack"
   ],
   "injectors": {
     "defaultRequire": 1

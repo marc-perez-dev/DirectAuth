@@ -14,7 +14,7 @@ public abstract class MixinItemEntityPickup {
 
     @Inject(method = "playerTouch", at = @At("HEAD"), cancellable = true)
     private void directAuth$noPickupWhileUnauthenticated(Player player, CallbackInfo ci) {
-        if (PlayerRestrictionHandler.onItemPickup(player)) {
+        if (PlayerRestrictionHandler.isRestricted(player)) {
             ci.cancel();
         }
     }

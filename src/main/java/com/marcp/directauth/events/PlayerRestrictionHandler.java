@@ -15,7 +15,6 @@ import com.mojang.brigadier.ParseResults;
 import net.fabricmc.fabric.api.entity.FakePlayer;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 import net.fabricmc.fabric.api.event.player.AttackBlockCallback;
-import net.fabricmc.fabric.api.event.player.AttackEntityCallback;
 import net.fabricmc.fabric.api.event.player.PlayerBlockBreakEvents;
 import net.fabricmc.fabric.api.event.player.UseBlockCallback;
 import net.fabricmc.fabric.api.event.player.UseEntityCallback;
@@ -26,6 +25,7 @@ import net.minecraft.server.MinecraftServer;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.InteractionResultHolder;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -88,8 +88,9 @@ public final class PlayerRestrictionHandler {
 
     /**
      * Las restricciones con callback de Fabric API se registran aquí. Las que no tienen (curarse,
-     * recoger objetos y experiencia, montar, comandos, daño) las aplican mixins que llaman a los
-     * métodos on* de esta clase, en el mismo punto en el que NeoForge dispara sus eventos.
+     * recoger objetos y experiencia, montar, atacar, comandos, daño) las aplican mixins con
+     * isRestricted (o los métodos on* de esta clase), en el mismo punto en el que NeoForge dispara
+     * sus eventos.
      */
     public static void register() {
         ServerTickEvents.END_SERVER_TICK.register(PlayerRestrictionHandler::onServerTick);
@@ -107,8 +108,6 @@ public final class PlayerRestrictionHandler {
         // p. ej. los armor stands para cambiar equipo
         UseEntityCallback.EVENT.register((player, level, hand, entity, hitResult) ->
             isNotAuth(player) ? InteractionResult.FAIL : InteractionResult.PASS);
-        AttackEntityCallback.EVENT.register((player, level, hand, entity, hitResult) ->
-            isNotAuth(player) ? InteractionResult.FAIL : InteractionResult.PASS);
 
         // Respaldo: el chat de un jugador en la jaula ya se descarta al llegar (JailPackets.dropChat).
         // Los comandos no pasan por aquí (ver onCommand), así que todo el chat se bloquea
@@ -121,79 +120,84 @@ public final class PlayerRestrictionHandler {
         });
     }
 
-    // --- NUEVO: Bloquear Regeneración de Salud ---
-    /** LivingEntity.heal (MixinLivingEntityRestrictions). true = no se cura. */
-    public static boolean onEntityHeal(Object entity) {
-        return isNotAuth(entity); // Nadie se cura sin contraseña
-    }
-
     // --- 1. Movimiento y Tick ---
     // No se usa el tick del jugador: ServerPlayer.doTick() corre dentro del tick de la conexión,
     // que después devuelve al jugador a su posición de inicio de tick y desharía el teleport al
     // ancla. Al final del tick del servidor se recorren los jugadores conectados, fuera de él.
     private static void onServerTick(MinecraftServer server) {
-        for (ServerPlayer player : List.copyOf(server.getPlayerList().getPlayers())) {
+        // Lo que hay que hacer con los jugadores en la jaula (expulsar, teleportar) puede cambiar la
+        // lista de jugadores: se recorre la lista viva y solo se copian ellos, normalmente ninguno.
+        List<ServerPlayer> jailed = null;
+        for (ServerPlayer player : server.getPlayerList().getPlayers()) {
             // Como EntityTickEvent: solo jugadores que el nivel sigue tickeando (un jugador muerto
             // sale del nivel tras la animación de muerte y su tickCount deja de avanzar)
-            if (!player.isRemoved()) tickPlayer(player);
+            if (player.isRemoved()) continue;
+            if (isNotAuth(player)) {
+                if (jailed == null) jailed = new ArrayList<>();
+                jailed.add(player);
+            } else if (!anchorPositions.isEmpty()) {
+                anchorPositions.remove(player.getUUID());
+            }
+        }
+        if (jailed != null) {
+            for (ServerPlayer player : jailed) tickJailedPlayer(player);
         }
     }
 
-    private static void tickPlayer(ServerPlayer player) {
-        if (isNotAuth(player)) {
-            // Verificar Timeout (Kick) cada 20 ticks (1 segundo) para no saturar
-            if (player.tickCount % 20 == 0) {
-                if (DirectAuth.getLoginManager().hasTimedOut(player)) {
-                    player.connection.disconnect(Component.literal(DirectAuth.getConfig().getLang().msgTimeout));
-                    return; // Salimos para no ejecutar el resto de lógica
-                }
+    private static void tickJailedPlayer(ServerPlayer player) {
+        if (player.hasDisconnected()) return; // expulsado en este mismo tick
+        // Verificar Timeout (Kick) cada 20 ticks (1 segundo) para no saturar
+        if (player.tickCount % 20 == 0) {
+            if (DirectAuth.getLoginManager().hasTimedOut(player)) {
+                player.connection.disconnect(Component.literal(DirectAuth.getConfig().getLang().msgTimeout));
+                return; // Salimos para no ejecutar el resto de lógica
             }
+        }
 
-            UUID uuid = player.getUUID();
+        // Volvió a montar en su vehículo al entrar (MixinEntityStartRiding) y aún no se le ha
+        // teleportado al spawn: se baja, y el vehículo se queda donde estaba
+        if (player.isPassenger()) player.stopRiding();
 
-            Anchor anchor = anchorPositions.computeIfAbsent(uuid,
-                id -> new Anchor(player.level().dimension(), player.position()));
+        UUID uuid = player.getUUID();
 
-            player.setDeltaMovement(Vec3.ZERO);
+        Anchor anchor = anchorPositions.computeIfAbsent(uuid,
+            id -> new Anchor(player.level().dimension(), player.position()));
 
-            Vec3 pos = anchor.position();
-            if (player.level().dimension() != anchor.dimension()) {
-                // Cambió de dimensión (portal, respawn...): devolverlo a la dimensión del ancla
-                ServerLevel anchorLevel = player.getServer().getLevel(anchor.dimension());
-                if (anchorLevel != null) {
-                    player.teleportTo(anchorLevel, pos.x, pos.y, pos.z, player.getYRot(), player.getXRot());
-                }
-            } else if (player.position().distanceToSqr(pos) > 2.25) {
-                player.teleportTo(pos.x, pos.y, pos.z);
+        player.setDeltaMovement(Vec3.ZERO);
+
+        Vec3 pos = anchor.position();
+        if (player.level().dimension() != anchor.dimension()) {
+            // Cambió de dimensión (portal, respawn...): devolverlo a la dimensión del ancla
+            ServerLevel anchorLevel = player.getServer().getLevel(anchor.dimension());
+            if (anchorLevel != null) {
+                player.teleportTo(anchorLevel, pos.x, pos.y, pos.z, player.getYRot(), player.getXRot());
             }
-            
-            // Removed player.clearFire() as fire ticks will be restored on authentication.
-            
-            if (player.tickCount % 100 == 0) {
-                player.displayClientMessage(
-                    Component.literal(DirectAuth.getConfig().getLang().msgAuthReminder),
-                    true 
-                );
-            }
-        } 
-        else if (anchorPositions.containsKey(player.getUUID())) {
-            anchorPositions.remove(player.getUUID());
+        } else if (player.position().distanceToSqr(pos) > 2.25) {
+            player.teleportTo(pos.x, pos.y, pos.z);
+        }
+        
+        // Removed player.clearFire() as fire ticks will be restored on authentication.
+        
+        if (player.tickCount % 100 == 0) {
+            player.displayClientMessage(
+                Component.literal(DirectAuth.getConfig().getLang().msgAuthReminder),
+                true 
+            );
         }
     }
 
-    /** Entity.startRiding (MixinEntityStartRiding). true = no se monta. */
-    public static boolean onMount(Object entity) {
-        return isNotAuth(entity);
+    /**
+     * Jugador al que PlayerList.placeNewPlayer está colocando (MixinPlayerList), solo en el hilo
+     * del servidor. Mientras tanto puede volver a montar en su vehículo (MixinEntityStartRiding).
+     */
+    private static ServerPlayer beingPlaced;
+
+    public static void setBeingPlaced(ServerPlayer player) {
+        beingPlaced = player;
     }
 
-    /** ItemEntity.playerTouch (MixinPickupRestrictions). true = no lo recoge. */
-    public static boolean onItemPickup(Object player) {
-        return isNotAuth(player);
-    }
-
-    /** ExperienceOrb.playerTouch (MixinPickupRestrictions). true = no la recoge. */
-    public static boolean onXpPickup(Object player) {
-        return isNotAuth(player);
+    public static boolean isBeingPlaced(Object entity) {
+        return entity != null && entity == beingPlaced;
     }
 
     /**

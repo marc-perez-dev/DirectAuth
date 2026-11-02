@@ -69,6 +69,8 @@ processResources {
     var replaceProperties = [
             minecraft_version: minecraft_version,
             loader_version   : loader_version,
+            // fabric-api: at least the version it is built against (without the "+1.21.1" build metadata)
+            fabric_api_min_version: fabric_api_version.split('\\+')[0],
             mod_id           : mod_id,
             mod_name         : mod_name,
             mod_license      : mod_license,

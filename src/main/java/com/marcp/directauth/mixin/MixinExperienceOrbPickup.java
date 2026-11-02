@@ -14,7 +14,7 @@ public abstract class MixinExperienceOrbPickup {
 
     @Inject(method = "playerTouch", at = @At("HEAD"), cancellable = true)
     private void directAuth$noXpPickupWhileUnauthenticated(Player player, CallbackInfo ci) {
-        if (PlayerRestrictionHandler.onXpPickup(player)) {
+        if (PlayerRestrictionHandler.isRestricted(player)) {
             ci.cancel();
         }
     }

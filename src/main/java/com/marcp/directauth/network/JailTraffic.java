@@ -2,10 +2,14 @@ package com.marcp.directauth.network;
 
 import com.marcp.directauth.DirectAuth;
 import com.marcp.directauth.events.PlayerRestrictionHandler;
+import io.netty.buffer.ByteBuf;
+import io.netty.buffer.Unpooled;
 import net.minecraft.network.PacketSendListener;
+import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.protocol.Packet;
 import net.minecraft.network.protocol.common.ClientboundCustomPayloadPacket;
 import net.minecraft.network.protocol.common.ServerboundCustomPayloadPacket;
+import net.minecraft.network.protocol.common.custom.DiscardedPayload;
 import net.minecraft.network.protocol.game.ClientGamePacketListener;
 import net.minecraft.network.protocol.game.ClientboundBundlePacket;
 import net.minecraft.resources.ResourceLocation;
@@ -37,12 +41,23 @@ import java.util.function.Consumer;
 public final class JailTraffic {
     private static final Map<UUID, Held> HELD = new ConcurrentHashMap<>();
 
+    /**
+     * Límite de lo retenido del cliente por conexión: cada payload registrado puede ocupar mucho, y
+     * sin límite una conexión sin autenticar podría llenar la memoria. Lo que no cabe se descarta.
+     * Al entrar, un modpack grande envía unas decenas de tipos pequeños.
+     */
+    private static final int MAX_HELD_TYPES = 64;
+    private static final int MAX_HELD_BYTES = 1 << 20;
+
     private record Deferred(Packet<?> packet, @Nullable PacketSendListener sendListener) {}
 
     /** Lo retenido de una conexión concreta (una reconexión empieza de cero). */
     private static final class Held {
         final ServerGamePacketListenerImpl connection;
         final Map<ResourceLocation, ServerboundCustomPayloadPacket> fromClient = new LinkedHashMap<>();
+        final Map<ResourceLocation, Integer> fromClientSizes = new LinkedHashMap<>();
+        int fromClientBytes;
+        boolean warnedFull;
         final Map<ResourceLocation, Deferred> toClient = new LinkedHashMap<>();
         @Nullable MenuProvider menu;
         boolean released;
@@ -100,16 +115,55 @@ public final class JailTraffic {
             Held held = HELD.get(connection.player.getUUID());
             if (held != null && held.connection == connection) {
                 synchronized (held) {
-                    if (!held.released) held.fromClient.remove(id);
+                    if (!held.released) removeFromClient(held, id);
                 }
             }
             return false;
         }
+        // Un id que ninguna mod registró llega como DiscardedPayload, y ni vanilla ni Fabric API
+        // hacen nada con él: sigue su camino. Retenerlo dejaría a un cliente inventarse tipos.
+        if (packet.payload() instanceof DiscardedPayload) return false;
         if (isLoaderPayload(id) || DirectAuth.getConfig().heldPayloadExceptions.contains(id.toString())) return false;
+        int size = encodedSize(connection, packet);
+        // Si no cabe se descarta igualmente: devuelve true
         return store(connection, held -> {
-            held.fromClient.remove(id); // el último de cada tipo, en orden de llegada
+            Integer previous = held.fromClientSizes.get(id);
+            long bytes = (long) held.fromClientBytes - (previous == null ? 0 : previous) + size;
+            if (previous == null && held.fromClient.size() >= MAX_HELD_TYPES || bytes > MAX_HELD_BYTES) {
+                if (!held.warnedFull) {
+                    held.warnedFull = true;
+                    DirectAuth.LOGGER.warn("DirectAuth: Too many mod payloads from unauthenticated {}, dropping the rest (first dropped: {})",
+                        connection.player.getGameProfile().getName(), id);
+                }
+                return;
+            }
+            removeFromClient(held, id); // el último de cada tipo, en orden de llegada
             held.fromClient.put(id, packet);
+            held.fromClientSizes.put(id, size);
+            held.fromClientBytes = (int) bytes;
         });
+    }
+
+    private static void removeFromClient(Held held, ResourceLocation id) {
+        held.fromClient.remove(id);
+        Integer size = held.fromClientSizes.remove(id);
+        if (size != null) held.fromClientBytes -= size;
+    }
+
+    /**
+     * Lo que ocupa el payload en la red. Llega ya decodificado, así que se vuelve a codificar (solo
+     * los de jugadores sin autenticar). Si no se puede, cuenta como si no cupiera.
+     */
+    private static int encodedSize(ServerGamePacketListenerImpl connection, ServerboundCustomPayloadPacket packet) {
+        ByteBuf buffer = Unpooled.buffer();
+        try {
+            ServerboundCustomPayloadPacket.STREAM_CODEC.encode(new RegistryFriendlyByteBuf(buffer, connection.player.server.registryAccess()), packet);
+            return buffer.readableBytes();
+        } catch (RuntimeException e) {
+            return MAX_HELD_BYTES + 1;
+        } finally {
+            buffer.release();
+        }
     }
 
     /**
@@ -197,6 +251,10 @@ public final class JailTraffic {
             menu = held.menu;
         }
         if (player.connection != held.connection || player.hasDisconnected()) return;
+        // Todo en este orden y sin salir de aquí, como en main: release() corre en el hilo del
+        // servidor, y ahí MinecraftServer.execute (con el que Fabric API pasa cada payload a su
+        // receptor) lo ejecuta en el acto en vez de encolarlo. Así los receptores de lo retenido
+        // terminan antes de abrir el menú aplazado.
         for (Deferred deferred : toClient) player.connection.send(deferred.packet(), deferred.sendListener());
         for (ServerboundCustomPayloadPacket packet : fromClient) {
             try {
