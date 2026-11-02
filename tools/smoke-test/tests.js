@@ -312,11 +312,19 @@ const rconTest = async (cmd) => /Test passed/.test(await T.rcon(cmd))
     await T.waitGone(NAME)
     await T.setConfig({ loginTimeout: 3 })
     try {
+      // Control positivo: un jugador autenticado y muerto, sin reaparecer, no se expulsa
+      const OK = process.env.DEADOK || 'DeadOk'
+      const ok = await register(OK, '127.0.0.18', PW, { options: { respawn: false } })
+      await T.rcon(`kill ${OK}`)
       // Desde otra IP (sin sesión de gracia): en la jaula y en la pantalla de muerte, sin reaparecer
       const d = await joinOk(NAME, '127.0.0.17', { options: { respawn: false } })
       T.assert(d.joinedDead, 'did not join dead')
       await T.expect(d, L.msgLoginRequest)
       await T.expectKick(d, L.msgTimeout, 8000)
+      await T.sleep(1500)
+      T.assert(ok.health === 0, `control: ${OK} not dead: ${ok.health}`)
+      T.assert(ok.connected && new RegExp(`\\b${OK}\\b`).test(await T.rcon('list')), `control: the logged-in dead player was disconnected (${ok.kickReason})`)
+      await T.quit(ok)
     } finally {
       await T.setConfig({ loginTimeout: 60 })
     }
@@ -763,47 +771,73 @@ const rconTest = async (cmd) => /Test passed/.test(await T.rcon(cmd))
     T.assert(await T.countItem(PICK, 'minecraft:emerald') === 3, 'control: could not pick up after login')
   })
 
-  await test('vehicle on rejoin: the boat stays where it was and the jailed player is not riding it', async () => {
-    const NAME = process.env.RIDER || 'Rider'
-    let b = await register(NAME, '127.0.0.76')
+  // El vehículo en el que salió no vuelve al mundo hasta que se autentica (JailedVehicles)
+  const boatRiding = (name) => rconTest(`execute as ${name} on vehicle if entity @s[type=minecraft:boat,tag=rideTest]`)
+  const boatInWorld = () => rconTest('execute if entity @e[type=boat,tag=rideTest]')
+  const boatPos = async () => {
+    const r = await T.rcon('data get entity @e[type=boat,tag=rideTest,limit=1] Pos')
+    const m = r.match(/\[(-?[\d.E-]+)d, (-?[\d.E-]+)d, (-?[\d.E-]+)d\]/)
+    return m ? m.slice(1).map(Number) : null
+  }
+  // Monta a b en una barca en x, z y sale; devuelve dónde estaba la barca
+  async function rideAndQuit (b, name, x, z) {
     await T.rcon('kill @e[type=boat]')
-    await T.rcon(`tp ${NAME} 40.5 -60 40.5`)
+    await T.rcon(`tp ${name} ${x} -60 ${z}`)
     await T.sleep(500)
-    await T.rcon('summon minecraft:boat 40.5 -60 42.5 {Tags:["rideTest"]}')
+    await T.rcon(`summon minecraft:boat ${x} -60 ${z + 2} {Tags:["rideTest"]}`)
     await T.sleep(500)
     const boat = Object.values(b.entities).find((e) => e.name === 'boat')
     T.assert(boat, 'boat not visible')
     b.mount(boat)
     await T.sleep(800)
-    // 1.20.1 no admite predicados en línea: "on vehicle" pasa al vehículo, si lo hay
-    const riding = () => rconTest(`execute as ${NAME} on vehicle if entity @s[type=minecraft:boat]`)
-    T.assert(await riding(), 'control: could not mount the boat before logging out')
-    const boatPos = async () => {
-      const r = await T.rcon('data get entity @e[type=boat,tag=rideTest,limit=1] Pos')
-      const m = r.match(/\[(-?[\d.E-]+)d, (-?[\d.E-]+)d, (-?[\d.E-]+)d\]/)
-      return m ? m.slice(1).map(Number) : null
-    }
-    const before = await boatPos()
-    T.assert(before, 'boat not found before logging out')
+    T.assert(await boatRiding(name), 'control: could not mount the boat before logging out')
+    const pos = await boatPos()
+    T.assert(pos, 'boat not found before logging out')
     await T.quit(b)
-    await T.waitGone(NAME)
+    await T.waitGone(name)
     // Vanilla quita el vehículo del mundo con el jugador y lo vuelve a poner al entrar
-    T.assert(!(await rconTest('execute if entity @e[type=boat,tag=rideTest]')), 'boat still in the world while its rider is offline')
-    // Desde otra IP (sin sesión de gracia): entra en la jaula
+    T.assert(!(await boatInWorld()), 'boat still in the world while its rider is offline')
+    return pos
+  }
+  async function expectRidingAt (name, before) {
+    await T.sleep(800)
+    T.assert(await boatRiding(name), `${name} is not riding the boat`)
+    const after = await boatPos()
+    T.assert(after && T.near(after, before, 1), `boat moved from ${before} to ${after}`)
+    T.assert(T.near(await T.posOf(name), before, 1.5), `${name} not at the boat: ${await T.posOf(name)}`)
+    const count = await T.rcon('execute if entity @e[type=boat,tag=rideTest]')
+    T.assert(/count: 1\b/.test(count), `expected exactly one boat: ${count}`)
+  }
+
+  await test('vehicle on rejoin: not in the world while jailed, the owner rides it again after /login', async () => {
+    const NAME = process.env.RIDER || 'Rider'
+    let b = await register(NAME, '127.0.0.76')
+    const before = await rideAndQuit(b, NAME, 40.5, 40.5)
+    // Desde otra IP (sin sesión de gracia): entra en la jaula, y el vehículo no aparece
     b = await joinOk(NAME, '127.0.0.77')
     await T.expect(b, L.msgLoginRequest)
     await T.sleep(1500)
-    const after = await boatPos()
-    T.assert(after, 'the boat was deleted when the jailed player rejoined')
-    T.assert(T.near(after, before, 1), `boat moved from ${before} to ${after}`)
-    T.assert(!(await riding()), 'the jailed player is riding the boat')
+    T.assert(!(await boatInWorld()), 'the boat is in the world while the jailed player is online')
     T.assert(T.near(await T.posOf(NAME), SPAWN, 1.6), `jailed rider not at spawn: ${await T.posOf(NAME)}`)
-    const count = await T.rcon('execute if entity @e[type=boat,tag=rideTest]')
-    T.assert(/count: 1\b/.test(count), `expected exactly one boat: ${count}`)
-    T.send(b, `/login ${PW}`)
-    await T.expect(b, L.msgAuthenticated)
-    await T.sleep(800)
-    T.assert(await boatPos(), 'boat gone after /login')
+    // Al salir se guarda el fichero, que conserva el vehículo
+    await T.quit(b)
+    await T.waitGone(NAME)
+    T.assert(!(await boatInWorld()), 'the jailed player left the boat in the world')
+    // Control positivo: el dueño entra con contraseña desde otra IP y vuelve a estar en la barca
+    b = await login(NAME, '127.0.0.78')
+    await expectRidingAt(NAME, before)
+    await T.quit(b)
+    await T.rcon('kill @e[type=boat]')
+  })
+
+  await test('vehicle on rejoin: a restored grace session rides it again at once', async () => {
+    const NAME = process.env.RIDER2 || 'Rider2'
+    let b = await register(NAME, '127.0.0.79')
+    const before = await rideAndQuit(b, NAME, 46.5, 40.5)
+    b = await joinOk(NAME, '127.0.0.79')
+    await T.expect(b, L.msgSessionRestored)
+    await expectRidingAt(NAME, before)
+    await T.quit(b)
     await T.rcon('kill @e[type=boat]')
   })
 
