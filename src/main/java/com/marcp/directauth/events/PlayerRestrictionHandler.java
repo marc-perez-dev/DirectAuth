@@ -11,26 +11,27 @@ import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.effect.MobEffectInstance;
 import net.minecraft.world.phys.Vec3;
-import net.neoforged.bus.api.SubscribeEvent;
-import net.neoforged.neoforge.common.util.FakePlayer;
-import net.neoforged.neoforge.common.util.TriState;
-import net.neoforged.neoforge.event.CommandEvent;
-import net.neoforged.neoforge.event.ServerChatEvent;
-import net.neoforged.neoforge.event.entity.EntityMountEvent;
-import net.neoforged.neoforge.event.entity.living.LivingDamageEvent;
-import net.neoforged.neoforge.event.entity.living.LivingHealEvent;
-import net.neoforged.neoforge.event.entity.player.AttackEntityEvent;
-import net.neoforged.neoforge.event.entity.player.ItemEntityPickupEvent;
-import net.neoforged.neoforge.event.entity.player.PlayerInteractEvent;
-import net.neoforged.neoforge.event.entity.player.PlayerXpEvent;
-import net.neoforged.neoforge.event.level.BlockEvent;
-import net.neoforged.neoforge.event.tick.EntityTickEvent;
+import com.mojang.brigadier.ParseResults;
+import net.fabricmc.fabric.api.entity.FakePlayer;
+import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
+import net.fabricmc.fabric.api.event.player.AttackBlockCallback;
+import net.fabricmc.fabric.api.event.player.AttackEntityCallback;
+import net.fabricmc.fabric.api.event.player.PlayerBlockBreakEvents;
+import net.fabricmc.fabric.api.event.player.UseBlockCallback;
+import net.fabricmc.fabric.api.event.player.UseEntityCallback;
+import net.fabricmc.fabric.api.event.player.UseItemCallback;
+import net.fabricmc.fabric.api.message.v1.ServerMessageEvents;
+import net.minecraft.commands.CommandSourceStack;
+import net.minecraft.server.MinecraftServer;
+import net.minecraft.world.InteractionResult;
+import net.minecraft.world.InteractionResultHolder;
 
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
-public class PlayerRestrictionHandler {
+public final class PlayerRestrictionHandler {
     
     // Posición (y dimensión) en la que se mantiene quieto a cada jugador sin autenticar
     private record Anchor(ResourceKey<Level> dimension, Vec3 position) {}
@@ -78,137 +79,150 @@ public class PlayerRestrictionHandler {
             && !DirectAuth.getLoginManager().isAuthenticated(player);
     }
 
-    private boolean isNotAuth(Object entity) {
+    private static boolean isNotAuth(Object entity) {
         return isRestricted(entity);
     }
 
+    private PlayerRestrictionHandler() {
+    }
+
+    /**
+     * Las restricciones con callback de Fabric API se registran aquí. Las que no tienen (curarse,
+     * recoger objetos y experiencia, montar, comandos, daño) las aplican mixins que llaman a los
+     * métodos on* de esta clase, en el mismo punto en el que NeoForge dispara sus eventos.
+     */
+    public static void register() {
+        ServerTickEvents.END_SERVER_TICK.register(PlayerRestrictionHandler::onServerTick);
+
+        // Romper / clic izquierdo (Fabric reenvía el bloque al cliente al cancelar)
+        PlayerBlockBreakEvents.BEFORE.register((level, player, pos, state, blockEntity) -> !isNotAuth(player));
+        AttackBlockCallback.EVENT.register((player, level, hand, pos, direction) ->
+            isNotAuth(player) ? InteractionResult.FAIL : InteractionResult.PASS);
+        // Clic derecho en bloque y con objeto (vanilla reenvía los bloques tras useItemOn)
+        UseBlockCallback.EVENT.register((player, level, hand, hitResult) ->
+            isNotAuth(player) ? InteractionResult.FAIL : InteractionResult.PASS);
+        UseItemCallback.EVENT.register((player, level, hand) ->
+            isNotAuth(player) ? InteractionResultHolder.fail(player.getItemInHand(hand)) : InteractionResultHolder.pass(player.getItemInHand(hand)));
+        // Interactuar con entidades: INTERACT y también INTERACT_AT (hitResult != null), que usan
+        // p. ej. los armor stands para cambiar equipo
+        UseEntityCallback.EVENT.register((player, level, hand, entity, hitResult) ->
+            isNotAuth(player) ? InteractionResult.FAIL : InteractionResult.PASS);
+        AttackEntityCallback.EVENT.register((player, level, hand, entity, hitResult) ->
+            isNotAuth(player) ? InteractionResult.FAIL : InteractionResult.PASS);
+
+        // Respaldo: el chat de un jugador en la jaula ya se descarta al llegar (JailPackets.dropChat).
+        // Los comandos no pasan por aquí (ver onCommand), así que todo el chat se bloquea
+        ServerMessageEvents.ALLOW_CHAT_MESSAGE.register((message, sender, params) -> {
+            if (isNotAuth(sender)) {
+                sender.sendSystemMessage(Component.literal(DirectAuth.getConfig().getLang().msgUseCommands));
+                return false;
+            }
+            return true;
+        });
+    }
+
     // --- NUEVO: Bloquear Regeneración de Salud ---
-    @SubscribeEvent
-    public void onEntityHeal(LivingHealEvent event) {
-        if (isNotAuth(event.getEntity())) {
-            event.setCanceled(true); // Nadie se cura sin contraseña
-        }
+    /** LivingEntity.heal (MixinLivingEntityRestrictions). true = no se cura. */
+    public static boolean onEntityHeal(Object entity) {
+        return isNotAuth(entity); // Nadie se cura sin contraseña
     }
 
     // --- 1. Movimiento y Tick ---
-    @SubscribeEvent
-    public void onEntityTick(EntityTickEvent.Post event) {
-        if (event.getEntity() instanceof ServerPlayer player) {
-            
-            if (isNotAuth(player)) {
-                // Verificar Timeout (Kick) cada 20 ticks (1 segundo) para no saturar
-                if (player.tickCount % 20 == 0) {
-                    if (DirectAuth.getLoginManager().hasTimedOut(player)) {
-                        player.connection.disconnect(Component.literal(DirectAuth.getConfig().getLang().msgTimeout));
-                        return; // Salimos para no ejecutar el resto de lógica
-                    }
+    // No se usa el tick del jugador: ServerPlayer.doTick() corre dentro del tick de la conexión,
+    // que después devuelve al jugador a su posición de inicio de tick y desharía el teleport al
+    // ancla. Al final del tick del servidor se recorren los jugadores conectados, fuera de él.
+    private static void onServerTick(MinecraftServer server) {
+        for (ServerPlayer player : List.copyOf(server.getPlayerList().getPlayers())) {
+            // Como EntityTickEvent: solo jugadores que el nivel sigue tickeando (un jugador muerto
+            // sale del nivel tras la animación de muerte y su tickCount deja de avanzar)
+            if (!player.isRemoved()) tickPlayer(player);
+        }
+    }
+
+    private static void tickPlayer(ServerPlayer player) {
+        if (isNotAuth(player)) {
+            // Verificar Timeout (Kick) cada 20 ticks (1 segundo) para no saturar
+            if (player.tickCount % 20 == 0) {
+                if (DirectAuth.getLoginManager().hasTimedOut(player)) {
+                    player.connection.disconnect(Component.literal(DirectAuth.getConfig().getLang().msgTimeout));
+                    return; // Salimos para no ejecutar el resto de lógica
                 }
-
-                UUID uuid = player.getUUID();
-
-                Anchor anchor = anchorPositions.computeIfAbsent(uuid,
-                    id -> new Anchor(player.level().dimension(), player.position()));
-
-                player.setDeltaMovement(Vec3.ZERO);
-
-                Vec3 pos = anchor.position();
-                if (player.level().dimension() != anchor.dimension()) {
-                    // Cambió de dimensión (portal, respawn...): devolverlo a la dimensión del ancla
-                    ServerLevel anchorLevel = player.getServer().getLevel(anchor.dimension());
-                    if (anchorLevel != null) {
-                        player.teleportTo(anchorLevel, pos.x, pos.y, pos.z, player.getYRot(), player.getXRot());
-                    }
-                } else if (player.position().distanceToSqr(pos) > 2.25) {
-                    player.teleportTo(pos.x, pos.y, pos.z);
-                }
-                
-                // Removed player.clearFire() as fire ticks will be restored on authentication.
-                
-                if (player.tickCount % 100 == 0) {
-                    player.displayClientMessage(
-                        Component.literal(DirectAuth.getConfig().getLang().msgAuthReminder),
-                        true 
-                    );
-                }
-            } 
-            else if (anchorPositions.containsKey(player.getUUID())) {
-                anchorPositions.remove(player.getUUID());
             }
+
+            UUID uuid = player.getUUID();
+
+            Anchor anchor = anchorPositions.computeIfAbsent(uuid,
+                id -> new Anchor(player.level().dimension(), player.position()));
+
+            player.setDeltaMovement(Vec3.ZERO);
+
+            Vec3 pos = anchor.position();
+            if (player.level().dimension() != anchor.dimension()) {
+                // Cambió de dimensión (portal, respawn...): devolverlo a la dimensión del ancla
+                ServerLevel anchorLevel = player.getServer().getLevel(anchor.dimension());
+                if (anchorLevel != null) {
+                    player.teleportTo(anchorLevel, pos.x, pos.y, pos.z, player.getYRot(), player.getXRot());
+                }
+            } else if (player.position().distanceToSqr(pos) > 2.25) {
+                player.teleportTo(pos.x, pos.y, pos.z);
+            }
+            
+            // Removed player.clearFire() as fire ticks will be restored on authentication.
+            
+            if (player.tickCount % 100 == 0) {
+                player.displayClientMessage(
+                    Component.literal(DirectAuth.getConfig().getLang().msgAuthReminder),
+                    true 
+                );
+            }
+        } 
+        else if (anchorPositions.containsKey(player.getUUID())) {
+            anchorPositions.remove(player.getUUID());
         }
     }
 
-    // --- (El resto de eventos se mantienen igual que en tu código original) ---
-    
-    @SubscribeEvent
-    public void onBlockBreak(BlockEvent.BreakEvent event) {
-        if (isNotAuth(event.getPlayer())) event.setCanceled(true);
+    /** Entity.startRiding (MixinEntityStartRiding). true = no se monta. */
+    public static boolean onMount(Object entity) {
+        return isNotAuth(entity);
     }
 
-    @SubscribeEvent
-    public void onLeftClickBlock(PlayerInteractEvent.LeftClickBlock event) {
-        if (isNotAuth(event.getEntity())) event.setCanceled(true);
+    /** ItemEntity.playerTouch (MixinPickupRestrictions). true = no lo recoge. */
+    public static boolean onItemPickup(Object player) {
+        return isNotAuth(player);
     }
-    @SubscribeEvent
-    public void onRightClickBlock(PlayerInteractEvent.RightClickBlock event) {
-        if (isNotAuth(event.getEntity())) event.setCanceled(true);
+
+    /** ExperienceOrb.playerTouch (MixinPickupRestrictions). true = no la recoge. */
+    public static boolean onXpPickup(Object player) {
+        return isNotAuth(player);
     }
-    @SubscribeEvent
-    public void onRightClickItem(PlayerInteractEvent.RightClickItem event) {
-        if (isNotAuth(event.getEntity())) event.setCanceled(true);
+
+    /**
+     * Daño ya reducido por armadura y efectos, antes de gastar los corazones de absorción
+     * (Player.actuallyHurt, MixinPlayerDamage): como LivingDamageEvent.Pre de NeoForge.
+     */
+    public static float onDamage(Object entity, float damage) {
+        return isNotAuth(entity) ? 0 : damage;
     }
-    @SubscribeEvent
-    public void onInteractEntity(PlayerInteractEvent.EntityInteract event) {
-        if (isNotAuth(event.getEntity())) event.setCanceled(true);
-    }
-    @SubscribeEvent
-    public void onInteractEntitySpecific(PlayerInteractEvent.EntityInteractSpecific event) {
-        // INTERACT_AT: lo usan p. ej. los armor stands para cambiar equipo
-        if (isNotAuth(event.getEntity())) event.setCanceled(true);
-    }
-    @SubscribeEvent
-    public void onMount(EntityMountEvent event) {
-        if (event.isMounting() && isNotAuth(event.getEntityMounting())) event.setCanceled(true);
-    }
-    @SubscribeEvent
-    public void onItemPickup(ItemEntityPickupEvent.Pre event) {
-        if (isNotAuth(event.getPlayer())) event.setCanPickup(TriState.FALSE);
-    }
-    @SubscribeEvent
-    public void onXpPickup(PlayerXpEvent.PickupXp event) {
-        if (isNotAuth(event.getEntity())) event.setCanceled(true);
-    }
-    @SubscribeEvent
-    public void onAttackEntity(AttackEntityEvent event) {
-        if (isNotAuth(event.getEntity())) event.setCanceled(true);
-    }
-    @SubscribeEvent
-    public void onDamage(LivingDamageEvent.Pre event) {
-        if (isNotAuth(event.getEntity())) event.setNewDamage(0);
-    }
-    @SubscribeEvent
-    public void onChat(ServerChatEvent event) {
-        // Respaldo: el chat de un jugador en la jaula ya se descarta al llegar (JailPackets.dropChat).
-        // Los comandos no pasan por aquí (van por CommandEvent), así que todo el chat se bloquea
-        if (isNotAuth(event.getPlayer())) {
-            event.setCanceled(true);
-            event.getPlayer().sendSystemMessage(Component.literal(DirectAuth.getConfig().getLang().msgUseCommands));
-        }
-    }
-    @SubscribeEvent
-    public void onCommand(CommandEvent event) {
-        if (event.getParseResults().getContext().getSource().getEntity() instanceof ServerPlayer player) {
+
+    /**
+     * Commands.performCommand (MixinCommands), por donde pasan los comandos que escriben los
+     * jugadores, como CommandEvent de NeoForge. true = se cancela.
+     */
+    public static boolean onCommand(ParseResults<CommandSourceStack> parseResults) {
+        if (parseResults.getContext().getSource().getEntity() instanceof ServerPlayer player) {
             if (isNotAuth(player)) {
-                String input = event.getParseResults().getReader().getString();
+                String input = parseResults.getReader().getString();
                 String[] parts = input.trim().split(" ");
                 String cmd = parts.length > 0 ? parts[0] : "";
                 
                 if (!cmd.equalsIgnoreCase("register") && 
                     !cmd.equalsIgnoreCase("login") && 
                     !cmd.equalsIgnoreCase("online")) {
-                    event.setCanceled(true);
                     player.sendSystemMessage(Component.literal(DirectAuth.getConfig().getLang().msgUseCommands));
+                    return true;
                 }
             }
         }
+        return false;
     }
 }

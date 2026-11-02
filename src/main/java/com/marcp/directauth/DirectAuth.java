@@ -14,16 +14,16 @@ import com.marcp.directauth.data.PositionManager;
 import com.marcp.directauth.events.ConnectionHandler;
 import com.marcp.directauth.events.PlayerRestrictionHandler;
 import com.mojang.logging.LogUtils;
-import net.neoforged.bus.api.IEventBus;
-import net.neoforged.fml.common.Mod;
-import net.neoforged.neoforge.common.NeoForge;
-import net.neoforged.neoforge.event.RegisterCommandsEvent;
+import com.mojang.brigadier.CommandDispatcher;
+import net.fabricmc.api.ModInitializer;
+import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
+import net.minecraft.commands.CommandSourceStack;
 import org.slf4j.Logger;
 
 import java.nio.file.Path;
 
-@Mod(DirectAuth.MODID)
-public class DirectAuth {
+/** Entrypoint "main" de fabric.mod.json (la mod solo se carga en servidores dedicados). */
+public class DirectAuth implements ModInitializer {
     public static final String MODID = "directauth";
     public static final Logger LOGGER = LogUtils.getLogger();
     private static DatabaseManager database;
@@ -31,30 +31,30 @@ public class DirectAuth {
     private static LoginManager loginManager;
     private static ModConfig config;
     
-    public DirectAuth(IEventBus modEventBus) {
+    @Override
+    public void onInitialize() {
         loginManager = new LoginManager();
         
-        // Registrar manejadores de eventos en el bus de juego (NeoForge.EVENT_BUS)
         // ConnectionHandler gestiona Login/Logout y ServerStarted
-        NeoForge.EVENT_BUS.register(new ConnectionHandler());
+        ConnectionHandler.register();
         
         // PlayerRestrictionHandler gestiona restricciones de movimiento y acciones
-        NeoForge.EVENT_BUS.register(new PlayerRestrictionHandler());
+        PlayerRestrictionHandler.register();
         
-        // Registrar comandos cuando el evento se dispare
-        NeoForge.EVENT_BUS.addListener(this::onRegisterCommands);
+        // Registrar comandos cuando se construya el dispatcher
+        CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> registerCommands(dispatcher));
     }
     
-    private void onRegisterCommands(RegisterCommandsEvent event) {
-        RegisterCommand.register(event.getDispatcher());
-        LoginCommand.register(event.getDispatcher());
-        PremiumCommand.register(event.getDispatcher());
+    private static void registerCommands(CommandDispatcher<CommandSourceStack> dispatcher) {
+        RegisterCommand.register(dispatcher);
+        LoginCommand.register(dispatcher);
+        PremiumCommand.register(dispatcher);
         
         // Nuevos Comandos
-        ChangePasswordCommand.register(event.getDispatcher());
-        UnregisterCommand.register(event.getDispatcher());
-        DirectAuthCommand.register(event.getDispatcher()); // Reemplaza a PremiumAdminCommand
-        LogoutCommand.register(event.getDispatcher());
+        ChangePasswordCommand.register(dispatcher);
+        UnregisterCommand.register(dispatcher);
+        DirectAuthCommand.register(dispatcher); // Reemplaza a PremiumAdminCommand
+        LogoutCommand.register(dispatcher);
     }
     
     public static void initDatabase(Path worldPath) {

@@ -60,6 +60,13 @@ public class DatabaseManager {
         this.dbPath = worldPath.resolve("serverconfig").resolve("directauth.db");
         this.connectionString = "jdbc:sqlite:" + dbPath.toString();
 
+        // NeoForge crea world/serverconfig para sus propias configs; Fabric no
+        try {
+            Files.createDirectories(dbPath.getParent());
+        } catch (IOException e) {
+            throw new RuntimeException("CRITICAL: Could not create " + dbPath.getParent(), e);
+        }
+
         initDatabase();
 
         // MIGRACIÓN AUTOMÁTICA: Si existe el JSON viejo, lo importamos

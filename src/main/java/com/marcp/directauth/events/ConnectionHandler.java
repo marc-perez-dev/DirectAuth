@@ -10,26 +10,38 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.server.network.ServerGamePacketListenerImpl;
 import net.minecraft.stats.Stats;
-import net.neoforged.bus.api.SubscribeEvent;
-import net.neoforged.neoforge.event.entity.player.PlayerEvent;
-import net.neoforged.neoforge.event.server.ServerStartedEvent;
-import net.neoforged.neoforge.event.server.ServerStoppedEvent;
+import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
+import net.minecraft.server.MinecraftServer;
 import java.nio.file.Path;
 import java.util.UUID;
 
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
 
-public class ConnectionHandler {
+public final class ConnectionHandler {
 
-    @SubscribeEvent
-    public void onServerStarted(ServerStartedEvent event) {
+    private ConnectionHandler() {
+    }
+
+    /**
+     * Arranque y parada del servidor. La entrada y salida de jugadores no usan
+     * ServerPlayConnectionEvents: JOIN se dispara a mitad de PlayerList.placeNewPlayer, antes de
+     * que el jugador esté en el mundo y en la lista de jugadores. MixinPlayerList llama a
+     * onPlayerLogin al final de placeNewPlayer y a onPlayerLogout al principio de PlayerList.remove,
+     * donde NeoForge dispara PlayerLoggedInEvent / PlayerLoggedOutEvent.
+     */
+    public static void register() {
+        ServerLifecycleEvents.SERVER_STARTED.register(ConnectionHandler::onServerStarted);
+        ServerLifecycleEvents.SERVER_STOPPED.register(ConnectionHandler::onServerStopped);
+    }
+
+    private static void onServerStarted(MinecraftServer server) {
         // Estado de autenticación limpio para esta instancia de servidor
         // (en singleplayer se arrancan varios servidores en la misma JVM)
         DirectAuth.resetLoginManager();
 
         // Inicializar la base de datos usando la ruta del nivel principal
-        Path worldRoot = event.getServer().getWorldPath(net.minecraft.world.level.storage.LevelResource.ROOT);
+        Path worldRoot = server.getWorldPath(net.minecraft.world.level.storage.LevelResource.ROOT);
         DirectAuth.initDatabase(worldRoot);
         // Inicializar configuración en world/serverconfig/DirectAuth-config.json
         DirectAuth.initConfig(worldRoot.resolve("serverconfig").resolve("DirectAuth-config.json"));
@@ -39,11 +51,10 @@ public class ConnectionHandler {
     }
 
     /**
-     * Se usa ServerStopped (no ServerStopping) porque los jugadores se desconectan DESPUÉS de
-     * ServerStopping; así sus logouts se procesan antes de cerrar la DB y descartar el estado.
+     * Se usa SERVER_STOPPED (no SERVER_STOPPING) porque los jugadores se desconectan DESPUÉS de
+     * SERVER_STOPPING; así sus logouts se procesan antes de cerrar la DB y descartar el estado.
      */
-    @SubscribeEvent
-    public void onServerStopped(ServerStoppedEvent event) {
+    private static void onServerStopped(MinecraftServer server) {
         DirectAuth.closeDatabase();
         DirectAuth.getLoginManager().shutdown();
         PlayerRestrictionHandler.clearAnchors();
@@ -51,50 +62,48 @@ public class ConnectionHandler {
         JailTraffic.clear();
     }
 
-    @SubscribeEvent
-    public void onPlayerLogin(PlayerEvent.PlayerLoggedInEvent event) {
-        if (event.getEntity() instanceof ServerPlayer player) {
-            // Registrar tiempo de entrada
-            DirectAuth.getLoginManager().recordJoin(player);
-            String username = player.getGameProfile().getName();
+    /** Al final de PlayerList.placeNewPlayer (MixinPlayerList). */
+    public static void onPlayerLogin(ServerPlayer player) {
+        // Registrar tiempo de entrada
+        DirectAuth.getLoginManager().recordJoin(player);
+        String username = player.getGameProfile().getName();
 
-            // 1. Intentamos obtener datos PRE-CARGADOS (Instantáneo). Hay que mirar si estaban
-            // ANTES de sacarlos: el marcador de "no existe" se devuelve como null.
-            boolean preLoaded = DirectAuth.getLoginManager().isPreLoaded(username);
-            UserData cachedData = DirectAuth.getLoginManager().getAndRemovePreLoadedData(username);
-            // Ahora, antes de que tickee: el tiempo de juego sube en la jaula y, con el fallback
-            // asíncrono, un jugador nuevo parecería haber jugado ya
-            boolean playedBefore = hasPlayedBefore(player);
+        // 1. Intentamos obtener datos PRE-CARGADOS (Instantáneo). Hay que mirar si estaban
+        // ANTES de sacarlos: el marcador de "no existe" se devuelve como null.
+        boolean preLoaded = DirectAuth.getLoginManager().isPreLoaded(username);
+        UserData cachedData = DirectAuth.getLoginManager().getAndRemovePreLoadedData(username);
+        // Ahora, antes de que tickee: el tiempo de juego sube en la jaula y, con el fallback
+        // asíncrono, un jugador nuevo parecería haber jugado ya
+        boolean playedBefore = hasPlayedBefore(player);
 
-            if (preLoaded) {
-                processLogin(player, cachedData, playedBefore);
-            } else {
-                // 2. Si no dio tiempo a cargar (raro), hacemos el fallback asíncrono
-                UUID uuid = player.getUUID();
-                ServerGamePacketListenerImpl connection = player.connection;
-                DirectAuth.getDatabase().getUserAsync(username).whenCompleteAsync((userData, error) -> {
-                    ServerPlayer current = player.getServer().getPlayerList().getPlayer(uuid);
-                    if (current == null || current.connection != connection) return; // Se fue mientras tanto
-                    if (error != null) {
-                        DirectAuth.LOGGER.error("DirectAuth: Could not load account data for {}", username, error);
-                        current.connection.disconnect(Component.literal(DirectAuth.getConfig().getLang().errInternal));
-                        return;
-                    }
-                    processLogin(current, userData, playedBefore);
-                }, AuthTasks.onServerThread(player.getServer()));
-            }
+        if (preLoaded) {
+            processLogin(player, cachedData, playedBefore);
+        } else {
+            // 2. Si no dio tiempo a cargar (raro), hacemos el fallback asíncrono
+            UUID uuid = player.getUUID();
+            ServerGamePacketListenerImpl connection = player.connection;
+            DirectAuth.getDatabase().getUserAsync(username).whenCompleteAsync((userData, error) -> {
+                ServerPlayer current = player.getServer().getPlayerList().getPlayer(uuid);
+                if (current == null || current.connection != connection) return; // Se fue mientras tanto
+                if (error != null) {
+                    DirectAuth.LOGGER.error("DirectAuth: Could not load account data for {}", username, error);
+                    current.connection.disconnect(Component.literal(DirectAuth.getConfig().getLang().errInternal));
+                    return;
+                }
+                processLogin(current, userData, playedBefore);
+            }, AuthTasks.onServerThread(player.getServer()));
         }
     }
 
     // Método auxiliar para no duplicar código
-    private void processLogin(ServerPlayer player, UserData userData, boolean playedBefore) {
+    private static void processLogin(ServerPlayer player, UserData userData, boolean playedBefore) {
         boolean isAuthenticated = false;
 
         // Caso Premium: Mojang tiene que haber confirmado ESTA cuenta en el login. La UUID del
         // jugador no lo demuestra: la cuenta juega con la que ya tenía antes del Modo Online.
         boolean premium = userData != null && userData.isPremium();
         if (premium) {
-            UUID verifiedUUID = ((MojangVerifiedConnection) player.connection.getConnection()).directAuth$getMojangUUID();
+            UUID verifiedUUID = ((MojangVerifiedConnection) player.connection.connection).directAuth$getMojangUUID();
             if (verifiedUUID == null || !verifiedUUID.toString().equalsIgnoreCase(userData.getOnlineUUID())) {
                 player.connection.disconnect(Component.literal(DirectAuth.getConfig().getLang().msgPremiumError));
                 return;
@@ -177,22 +186,20 @@ public class ConnectionHandler {
         return player.getStats().getValue(Stats.CUSTOM.get(Stats.PLAY_TIME)) > 0;
     }
 
-    @SubscribeEvent
-    public void onPlayerLogout(PlayerEvent.PlayerLoggedOutEvent event) {
-        if (event.getEntity() instanceof ServerPlayer player) {
-            // SI estaba autenticado, guardamos la sesión temporal
-            if (DirectAuth.getLoginManager().isAuthenticated(player)) {
-                DirectAuth.getLoginManager().pauseSession(player);
-            } else {
-                // Si no estaba logueado, limpieza normal
-                DirectAuth.getLoginManager().removePlayer(player);
-            }
-
-            PlayerRestrictionHandler.removeAnchor(player);
-            ConfirmationManager.cancel(player);
-            // Lo retenido de una conexión que no llegó a autenticarse no se procesa nunca
-            JailTraffic.discard(player);
-            // Nota: No borramos la posición guardada aquí. Se mantiene hasta que se autentique correctamente.
+    /** Al principio de PlayerList.remove (MixinPlayerList). */
+    public static void onPlayerLogout(ServerPlayer player) {
+        // SI estaba autenticado, guardamos la sesión temporal
+        if (DirectAuth.getLoginManager().isAuthenticated(player)) {
+            DirectAuth.getLoginManager().pauseSession(player);
+        } else {
+            // Si no estaba logueado, limpieza normal
+            DirectAuth.getLoginManager().removePlayer(player);
         }
+
+        PlayerRestrictionHandler.removeAnchor(player);
+        ConfirmationManager.cancel(player);
+        // Lo retenido de una conexión que no llegó a autenticarse no se procesa nunca
+        JailTraffic.discard(player);
+        // Nota: No borramos la posición guardada aquí. Se mantiene hasta que se autentique correctamente.
     }
 }
