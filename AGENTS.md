@@ -6,14 +6,14 @@ Single source of truth for any AI coding agent working in this repo (Claude Code
 
 ## 1. Project Overview
 
-**DirectAuth** is a server-side Minecraft authentication mod for **NeoForge 1.21.1** (Java 21). It lets a server run in offline mode safely by forcing players to `/register` and `/login` before they can play, with optional opt-in conversion to premium (online-mode) accounts that log in automatically through Mojang. An account keeps the UUID it plays with when it changes mode, so no player data ever moves.
+**DirectAuth** is a server-side Minecraft authentication mod for **Fabric 1.21.1** (Fabric API, Java 21). This is the `fabric-1.21.1` branch, a port of the NeoForge 1.21.1 version on `main`; keep behavior identical to `main` and port fixes between the branches. It lets a server run in offline mode safely by forcing players to `/register` and `/login` before they can play, with optional opt-in conversion to premium (online-mode) accounts that log in automatically through Mojang. An account keeps the UUID it plays with when it changes mode, so no player data ever moves.
 
 - **Mod ID:** `directauth`
 - **Main class:** `com.marcp.directauth.DirectAuth`
 - **License:** MIT
-- **Side:** server-required, client-required (declared in `neoforge.mods.toml`), but logic is server-side.
+- **Side:** server-only. `"environment": "server"` in `fabric.mod.json`, so Fabric Loader does not load it on clients (no singleplayer/LAN). No network channels of its own: players join with any client the rest of the server accepts.
 
-The `Documentation-NeoForge/` and `Documentation/` directories in the repo root are **not part of this mod** — they are the upstream NeoForged docs (Docusaurus v3; 1.21.1 lives in `versioned_docs/version-1.21.1/`) and the upstream Forge docs (MkDocs, used by the `forge-1.20.1` branch), copied for reference and git-ignored. Do not treat them as production code or modify them as part of mod work.
+The `Documentation-NeoForge/` and `Documentation/` directories in the repo root are **not part of this mod** — they are the upstream NeoForged docs and the upstream Forge docs (used by `main` and `forge-1.20.1`), copied for reference and git-ignored. Do not treat them as production code or modify them as part of mod work. Fabric API sources, decompiled vanilla and NeoForge sources for comparison go in `build/references/` (git-ignored, indexed in its `README.md`).
 
 ---
 
@@ -23,16 +23,16 @@ Authoritative values live in `gradle.properties`; the table below is a quick ref
 
 | Item | Value |
 |---|---|
-| Minecraft | `1.21.1` (range `[1.21.1, 1.22)`) |
-| NeoForge | `21.1.64` (range `[21.1.64,)`) |
+| Minecraft | `1.21.1` (`fabric.mod.json`: `~1.21.1`) |
+| Fabric Loader | `0.20.1` (`>=0.20.1`) |
+| Fabric API | `0.116.17+1.21.1` (required, any version) |
 | Java | 21 (toolchain pinned) |
-| Loader | `javafml`, range `[4,)` |
-| Parchment mappings | `2024.07.28` for MC `1.21` |
-| Gradle plugin | `net.neoforged.moddev` `2.0.121` |
-| Persistence | SQLite via `org.xerial:sqlite-jdbc:3.46.0.0` (jar-in-jar) |
-| Gradle wrapper | 9.2.0 |
+| Mappings | Mojang + Parchment `2024.07.28` for MC `1.21` (`loom.layered`): the same names as `main`, so mixins target the same members |
+| Gradle plugin | `net.fabricmc.fabric-loom-remap` `1.17.21` (the newest Loom that runs on Java 21; 1.18+ needs a Java 25 JVM) |
+| Persistence | SQLite via `org.xerial:sqlite-jdbc:3.46.0.0` (jar-in-jar through Loom `include`) |
+| Gradle wrapper | 9.8.2 |
 
-Mixins are enabled (`directauth.mixins.json`). One access transformer (`META-INF/accesstransformer.cfg`) makes `ServerLoginPacketListenerImpl$State` public for the login mixin. No coremods.
+Mixins are enabled (`directauth.mixins.json`, declared in `fabric.mod.json`). Production Fabric runs on intermediary names: `remapJar` (part of `build`) remaps the mixin annotations themselves, so there is no refmap; a mixin target that only works in dev is a real bug — test with the production jar. The mixin config plugin `DirectAuthMixinPlugin` adds the optional compat mixins only when their mod is loaded. One access widener (`directauth.accesswidener`) opens what NeoForge's own ATs/extensions gave `main`: `ServerLoginPacketListenerImpl$State`, `ServerCommonPacketListenerImpl.connection` (NeoForge's `getConnection()`) and `CommandSourceStack.source`.
 
 ---
 
@@ -40,32 +40,32 @@ Mixins are enabled (`directauth.mixins.json`). One access transformer (`META-INF
 
 ```
 DirectAuth/
-├── build.gradle              # moddev plugin, runs, jarJar(sqlite-jdbc)
+├── build.gradle              # Fabric Loom, layered mappings, include(sqlite-jdbc)
 ├── gradle.properties         # all versions & mod metadata
 ├── settings.gradle           # plugin management
 ├── src/
 │   ├── main/
 │   │   ├── java/com/marcp/directauth/
-│   │   │   ├── DirectAuth.java       # @Mod entry — registers handlers, exposes singletons
+│   │   │   ├── DirectAuth.java       # ModInitializer ("main" entrypoint) — registers handlers, exposes singletons
 │   │   │   ├── auth/                 # LoginManager, AuthTasks, MojangAPI, MojangVerifiedConnection, ConfirmationManager
 │   │   │   ├── commands/             # Brigadier command classes
 │   │   │   ├── config/               # ModConfig, LangConfig (Gson JSON)
 │   │   │   ├── data/                 # DatabaseManager (SQLite), PositionManager, UserData, StoredLocation
 │   │   │   ├── events/               # ConnectionHandler, PlayerRestrictionHandler
 │   │   │   ├── network/              # JailTraffic (other mods' packets and menus while jailed), JailPackets (vanilla allowlist)
-│   │   │   └── mixin/                # login handshake and account UUID, packet restrictions, respawn, effects, RCON response
+│   │   │   └── mixin/                # login handshake and account UUID, packet restrictions, respawn, effects, RCON response, the events Fabric API lacks
 │   │   ├── resources/
-│   │   │   ├── META-INF/             # mods.toml is generated from templates/
+│   │   │   ├── fabric.mod.json       # expanded from gradle.properties by processResources
+│   │   │   ├── directauth.accesswidener
 │   │   │   ├── directauth.mixins.json
 │   │   │   └── assets/directauth/    # (lang/ here is placeholder — real i18n is JSON in worldserverconfig)
-│   │   └── templates/META-INF/neoforge.mods.toml  # source for mods.toml expansion
-│   ├── testmod/              # dev-only test mod `directauth_test` for the smoke test (run `smokeServer`, never in the jar)
+│   ├── testmod/              # smoke-test mod `directauth_test` — still the NeoForge version from main, NOT compiled on this branch yet
 │   └── generated/resources/  # output of `runData`
 ├── Documentation-NeoForge/   # GIT-IGNORED — upstream NeoForged docs, not part of this mod
 ├── Documentation/            # GIT-IGNORED — upstream Forge docs (forge-1.20.1 branch), not part of this mod
-├── tools/smoke-test/         # end-to-end tests: real dev server + Mineflayer bots (see its README)
-├── tools/mod-tests/          # end-to-end tests with real third-party mods: real NeoForge client under Xvfb (see its README)
-├── run/  runs/  run-data/    # gitignored dev runtime dirs (the smoke test uses runs/smoke-test/)
+├── tools/smoke-test/         # end-to-end tests: NeoForge dev server + Mineflayer bots (see its README; not ported to Fabric yet)
+├── tools/mod-tests/          # end-to-end tests with real third-party mods: NeoForge client under Xvfb (see its README; not ported to Fabric yet)
+├── run/  runs/  run-data/    # gitignored dev runtime dirs (runs/fabric-server/ is a production Fabric server for manual checks)
 ├── build/  .gradle/  repo/   # gitignored gradle output
 ├── .github/workflows/build.yml  # CI: gradlew build on push/PR (Ubuntu, Temurin 21)
 ├── AGENTS.md                 # ← you are here
@@ -77,11 +77,11 @@ DirectAuth/
 ## 4. Source Architecture
 
 ### 4.1 Entrypoint — `DirectAuth.java`
-- `@Mod("directauth")` constructor receives the mod event bus.
-- Registers `ConnectionHandler` and `PlayerRestrictionHandler` on `NeoForge.EVENT_BUS`, and registers commands via `RegisterCommandsEvent`.
+- `ModInitializer` (the `main` entrypoint in `fabric.mod.json`); `onInitialize()` creates the first `LoginManager`.
+- Calls `ConnectionHandler.register()` and `PlayerRestrictionHandler.register()` (Fabric API callbacks), and registers commands via `CommandRegistrationCallback`. Where Fabric API has no event, a mixin calls the handler at the point where NeoForge fires its event (see §4.6).
 - Holds static singletons exposed via getters: `LoginManager`, `DatabaseManager`, `PositionManager`, `ModConfig`. **All cross-package access goes through these getters** — there is no DI container.
-- `initDatabase(Path)` and `initConfig(Path)` are called by `ConnectionHandler#onServerStarted`, *not* in the constructor (they need the world path). `initConfig` returns `false` (keeping the previous config, or defaults on first start) if the JSON is unreadable; it never overwrites a malformed file.
-- **One `LoginManager` per server instance**: `resetLoginManager()` runs on `ServerStartedEvent`, and `ServerStoppedEvent` shuts it down and closes the DB (`closeDatabase()`). Singleplayer starts several servers in one JVM, so never keep auth state in statics that survive a stop.
+- `initDatabase(Path)` and `initConfig(Path)` are called by `ConnectionHandler#onServerStarted`, *not* in `onInitialize` (they need the world path). `initConfig` returns `false` (keeping the previous config, or defaults on first start) if the JSON is unreadable; it never overwrites a malformed file.
+- **One `LoginManager` per server instance**: `resetLoginManager()` runs on `SERVER_STARTED`, and `SERVER_STOPPED` shuts it down and closes the DB (`closeDatabase()`). Singleplayer starts several servers in one JVM, so never keep auth state in statics that survive a stop.
 
 ### 4.2 `auth/`
 - **`LoginManager`** — central authentication state. Thread-safe (`ConcurrentHashMap`). Holds `authenticatedPlayers`, `failedLogins` + `loginAttempts` (**keyed by lowercased account name + IP**, not UUID: they survive reconnects and cover case variants, but a stranger on another IP cannot lock the owner out; failures count within max(15 min, `loginLockoutSeconds`), the cooldown entry expires after `loginCooldownMs`; `clearFailedLogins(name)` lifts a lockout), `connectionTimes` (login timeout), `preLoginCache` (mixin-populated; `NULL_MARKER` = "not registered"; entries expire after 10 min), `graceSessions` (IP-locked re-login, invalidated per account with `invalidateSessions(name)`), `pendingOperations` (one async password operation per player). Runs a scheduler for cleanup at `sessionCleanupInterval` minutes and a 2-thread hash pool.
@@ -93,7 +93,7 @@ DirectAuth/
 - **`ConfirmationManager`** — pending-action store (30s TTL, `Consumer<ServerPlayer>`) used by `/changepassword` and `/unregister`, drained by `/directauth confirm`; cleared on logout and server stop.
 
 ### 4.3 `commands/`
-All Brigadier-based. Registered through `RegisterCommandsEvent` in `DirectAuth`.
+All Brigadier-based. Registered through `CommandRegistrationCallback` in `DirectAuth`.
 
 | Command | Args | Auth required? | Notes |
 |---|---|---|---|
@@ -111,13 +111,13 @@ All Brigadier-based. Registered through `RegisterCommandsEvent` in `DirectAuth`.
 | `/directauth resetlang` | 0 | **op** | Deletes the en/es language files so they regenerate from defaults. |
 
 ### 4.4 `events/`
-- **`ConnectionHandler`** — `ServerStartedEvent` (fresh `LoginManager`, init DB/config/scheduler), `ServerStoppedEvent` (close DB, shut down `LoginManager`, clear anchors/confirmations; runs *after* players are disconnected), `PlayerLoggedInEvent` (consume mixin pre-cache, attempt grace-session restore only if the account exists; otherwise a player who has played before is teleported to spawn with the original position saved, while a never-played player stays where the game or a first-join mod put them; the anchor is reset either way), `PlayerLoggedOutEvent` (pause session if authenticated, else drop; discards what `JailTraffic` held for that connection).
-- **`PlayerRestrictionHandler`** — enforces the unauthenticated-player jail. `isRestricted(entity)` is the single check (real `ServerPlayer`, **not a `FakePlayer`**, not authenticated) — mixins use it too. Anchors players with a `Map<UUID, Anchor(dimension, Vec3)>` via `EntityTickEvent` (teleports back across dimensions if needed), cancels block break, left/right click, entity interact (incl. `EntityInteractSpecific` for armor stands), item pickup, XP pickup, mount, attack, all chat (a fallback: `JailPackets.dropChat` already drops it; commands are filtered separately in `CommandEvent`: only `register`/`login`/`online`), damage (set to 0), and healing. Item drops and inventory/container clicks are blocked at the packet level by `MixinServerGamePacketListenerImpl` — **don't** handle `ItemTossEvent`: the game itself fires it for drops (closing menus on disconnect, `/give`). `release(player)` removes the anchor, resyncs effects and calls `JailTraffic.release` after `/login` and `/register` (auto-login and restored sessions call `JailTraffic.release` from `ConnectionHandler`). Sends the auth reminder every ~5 seconds (100 ticks). Kicks if `loginTimeout` elapsed.
+- **`ConnectionHandler`** — `ServerLifecycleEvents.SERVER_STARTED` (fresh `LoginManager`, init DB/config/scheduler; `DatabaseManager` creates `world/serverconfig/`, which NeoForge creates by itself), `SERVER_STOPPED` (close DB, shut down `LoginManager`, clear anchors/confirmations; runs *after* players are disconnected), `onPlayerLogin` — called by `MixinPlayerList` at the end of `PlayerList.placeNewPlayer`, where NeoForge fires `PlayerLoggedInEvent`; Fabric API's `ServerPlayConnectionEvents.JOIN` fires earlier, before the player is in the level and the player list — (consume mixin pre-cache, attempt grace-session restore only if the account exists; otherwise a player who has played before is teleported to spawn with the original position saved, while a never-played player stays where the game or a first-join mod put them; the anchor is reset either way), `onPlayerLogout` — `MixinPlayerList`, head of `PlayerList.remove`, like `PlayerLoggedOutEvent` — (pause session if authenticated, else drop; discards what `JailTraffic` held for that connection).
+- **`PlayerRestrictionHandler`** — enforces the unauthenticated-player jail. `isRestricted(entity)` is the single check (real `ServerPlayer`, **not a `FakePlayer`**, not authenticated) — mixins use it too. Anchors players with a `Map<UUID, Anchor(dimension, Vec3)>` from `ServerTickEvents.END_SERVER_TICK`, iterating the connected players that are still ticked by their level (`!isRemoved()`, like `EntityTickEvent` on `main`; teleports back across dimensions if needed). **Not** a player tick: `ServerPlayer.doTick()` runs inside the connection tick, which then resets the player to its start-of-tick position and would undo the anchor teleport. Fabric API callbacks cancel block break (`PlayerBlockBreakEvents.BEFORE`), left click (`AttackBlockCallback`, which also resends the block), right click on blocks and with items (`UseBlockCallback`, `UseItemCallback`, `FAIL`), entity interact (`UseEntityCallback`, both INTERACT and INTERACT_AT for armor stands), attack (`AttackEntityCallback`) and all chat (`ServerMessageEvents.ALLOW_CHAT_MESSAGE`; a fallback: `JailPackets.dropChat` already drops it). Mixins call the `on*` methods for the rest: commands (`MixinCommands`, only `register`/`login`/`online`), item and XP pickup, mount, damage and healing (see §4.6). Item drops and inventory/container clicks are blocked at the packet level by `MixinServerGamePacketListenerImpl` — **don't** handle `ItemTossEvent`: the game itself fires it for drops (closing menus on disconnect, `/give`). `release(player)` removes the anchor, resyncs effects and calls `JailTraffic.release` after `/login` and `/register` (auto-login and restored sessions call `JailTraffic.release` from `ConnectionHandler`). Sends the auth reminder every ~5 seconds (100 ticks). Kicks if `loginTimeout` elapsed.
 
 ### 4.5 `network/` — the jail and other mods
 Many mods act at first join or accept client packets without knowing about authentication. Everything here keys off `PlayerRestrictionHandler.isRestricted`.
 - **`JailTraffic`** — per jailed connection, until it authenticates:
-  - **Payloads the client sends to mods** are held (only the last of each payload type, in arrival order) and processed through `NetworkRegistry.handleModdedPayload` on `release`; they are dropped if the connection leaves first. This stops an impostor from acting for the account (Cobblemon releases, Vampirism bites, choosing an origin) while one-shot handshakes (Simple Voice Chat's secret request) still work after `/login`. Holding instead of dropping, and keeping only the last per type, are deliberate: Epic Fight sends a packet every tick. `heldPayloadExceptions` lists payloads that may pass (a mod's timed "I have the mod" reply).
+  - **Payloads the client sends to mods** are held in `MixinConnection` (`genericsFtw`, network thread: before Fabric API's dispatch at the head of `handleCustomPayload` and before any mod that hooks it directly; only the last of each payload type, in arrival order) and processed through `ServerGamePacketListenerImpl.handleCustomPayload` (so Fabric API dispatches them; the player is authenticated by then, so they are not held again) on `release`. Payloads of the `minecraft`, `c`, `fabric` and `fabric-*` namespaces (channel registration, brand, Fabric API's own) are never held or deferred; they are dropped if the connection leaves first. This stops an impostor from acting for the account (Cobblemon releases, Vampirism bites, choosing an origin) while one-shot handshakes (Simple Voice Chat's secret request) still work after `/login`. Holding instead of dropping, and keeping only the last per type, are deliberate: Epic Fight sends a packet every tick. `heldPayloadExceptions` lists payloads that may pass (a mod's timed "I have the mod" reply).
   - **Screen-opening payloads** the server sends (`deferredScreenPayloads`, incl. inside `ClientboundBundlePacket`s) are delivered on `release`, last of each id (Pixelmon resends every 5 s).
   - **Menus the server opens** (`ServerPlayer.openMenu`; a jailed player cannot open one themselves) are opened on `release` (Tensura's race menu). The caller gets `OptionalInt.empty()`, so anything it would send keyed by the container id is not replayed (merchant offers do this, but trading needs an interaction the jail blocks).
   - A deferred screen is delivered even if the client already acted on the mod while jailed, because DirectAuth cannot tell it became stale (Pixelmon's client can show its starter screen in the jail from a previous session; after `/login` the screen reopens once and one more pick closes it).
@@ -125,16 +125,17 @@ Many mods act at first join or accept client packets without knowing about authe
 - **`JailPackets`** — allowlist of vanilla serverbound packets a jailed player may send; the rest are dropped in `MixinConnection`. Chat messages (not commands) are dropped there too (`dropChat`), before any mod reads them (MCA's villager AI hooks the start of `handleChat` and sends the text to an external service); they still go through vanilla `handleChat`'s validation without being broadcast (last-seen acknowledgements, illegal characters, and the signed-message chain, which would otherwise fall behind the client's and reject their next message after `/login`) and counted by vanilla's chat spam kick, and the player gets `msgUseCommands` (unless `/login` finished in between). Some check permissions themselves (command blocks, difficulty, structure blocks, NBT queries) and an op impostor has those permissions. Interaction packets stay allowed because the jail's events cancel them *and* correct the client.
 
 ### 4.6 `mixin/`
-- **`MixinServerLoginPacketListenerImpl`** — async pre-load of `UserData` during the login handshake so neither the handshake nor `PlayerLoggedInEvent` blocks on SQLite. Phase 2 only *peeks* the cache. Exceptions from re-running vanilla `handleHello` inside the future disconnect the client instead of being swallowed. `startClientVerification` (both paths: offline on the server thread, premium on the authenticator thread) records a Mojang-confirmed UUID on the connection (`MojangVerifiedConnection`; not the singleplayer offline fallback) and swaps the profile's UUID for the account's UUID (`UserData#getAccountUUID`, keeping the skin properties): for premium accounts only when Mojang confirmed `onlineUUID`, for offline accounts on the offline path (every case variant of the name then shares that UUID, like the exact name already did). Not on online-mode servers. `ConnectionHandler` disconnects a join that did not get the account's UUID (e.g. the cache entry was dropped mid-login), since mods would treat it as a new player.
+- **`MixinServerLoginPacketListenerImpl`** — vanilla, same as `main`. Fabric API's login networking (`ServerLoginNetworkHandlerMixin`) only delays `verifyLoginAndFinishConnectionSetup` in `tick` until its login queries finish, after DirectAuth has swapped the profile in `startClientVerification`; it does not touch `handleHello`/`handleKey`. Async pre-load of `UserData` during the login handshake so neither the handshake nor `PlayerLoggedInEvent` blocks on SQLite. Phase 2 only *peeks* the cache. Exceptions from re-running vanilla `handleHello` inside the future disconnect the client instead of being swallowed. `startClientVerification` (both paths: offline on the server thread, premium on the authenticator thread) records a Mojang-confirmed UUID on the connection (`MojangVerifiedConnection`; not the singleplayer offline fallback) and swaps the profile's UUID for the account's UUID (`UserData#getAccountUUID`, keeping the skin properties): for premium accounts only when Mojang confirmed `onlineUUID`, for offline accounts on the offline path (every case variant of the name then shares that UUID, like the exact name already did). Not on online-mode servers. `ConnectionHandler` disconnects a join that did not get the account's UUID (e.g. the cache entry was dropped mid-login), since mods would treat it as a new player.
 - **`MixinLivingEntityEffects`** — cancels `tickEffects` for restricted players so effect durations freeze while in the jail (the client HUD is hidden/resynced by `PlayerRestrictionHandler`).
 - **`MixinServerPlayerRespawn`** — makes `findRespawnPositionAndUseSpawnBlock` return world spawn for restricted players, so respawning neither reveals the account's bed/anchor nor consumes an anchor charge. After `/login`, `LoginCommand` calls the same vanilla method (now unrestricted) so anchor charges and invalid spawn points follow vanilla rules.
 - **`MixinServerGamePacketListenerImpl`** — cancels drop actions, offhand swaps (F), pick-item (middle click), container clicks and creative-slot packets for restricted players (injected *after* `PacketUtils.ensureRunningOnSameThread`, i.e. on the server thread) and resyncs the client inventory.
-- **`MixinItemPhysicPackets`** — `@Pseudo` compat mixin (`remap = false`, `require = 0`, no-op without the mod) on ItemPhysic's `DropPacket` / `PickupPacket#executeServer`: with `throw.enabled` the client sends Q as a CreativeCore packet instead of `ServerboundPlayerActionPacket`, which drops the item without passing through `handlePlayerAction`. Cancels both for restricted players (resyncs the inventory, `msgNoDrop` on drop). CreativeCore runs them on the server thread (`enqueueWork`).
+- **`MixinItemPhysicPackets`** — `@Pseudo` compat mixin (`remap = false`, `require = 0`), added by `DirectAuthMixinPlugin` only when the mod id `itemphysic` is loaded (Fabric logs a WARN for every missing `@Pseudo` target otherwise); the method is named without a descriptor because `remap = false` would leave `ServerPlayer` unmapped in production. It targets ItemPhysic's `DropPacket` / `PickupPacket#executeServer`: with `throw.enabled` the client sends Q as a CreativeCore packet instead of `ServerboundPlayerActionPacket`, which drops the item without passing through `handlePlayerAction`. Cancels both for restricted players (resyncs the inventory, `msgNoDrop` on drop). CreativeCore runs them on the server thread (`enqueueWork`).
 - **`MixinRconConsoleSource`** — vanilla reads the RCON response as soon as the command returns, before async admin commands finish. Before `getCommandResponse()` the RCON thread (never the server thread) waits, up to 30 s, for the operations registered by `AuthTasks.finish`; `prepareForCommand()` forgets operations of previous commands. Admin commands must go through `AuthTasks.finish(CommandSourceStack, ...)` for RCON to see their output.
-- **`MixinServerCommonPacketListenerImpl`** — `handleCustomPayload`: holds mod payloads from jailed players just before `NetworkRegistry.handleModdedPayload` (network thread). `send`: defers screen payloads after NeoForge's `checkPacket`. Both via `JailTraffic`.
-- **`MixinConnection`** — `genericsFtw` (every received packet, network thread): drops vanilla packets of jailed players that `JailPackets` does not allow. Also implements `MojangVerifiedConnection`.
+- **`MixinServerCommonPacketListenerImpl`** — head of `send(Packet, PacketSendListener)`: defers screen payloads via `JailTraffic` (`ServerPlayNetworking.send` goes through it).
+- **`MixinConnection`** — `genericsFtw` (every received packet, network thread): holds mod payloads via `JailTraffic.holdFromClient` and drops vanilla packets of jailed players that `JailPackets` does not allow. Also implements `MojangVerifiedConnection`.
 - **`ServerGamePacketListenerAccessor`** — invokers for the private steps of vanilla `handleChat`, used by `JailPackets.dropChat`.
-- **`MixinServerPlayerOpenMenu`** — defers `openMenu(MenuProvider, Consumer)` (the vanilla overload delegates to it) for jailed players via `JailTraffic`.
+- **`MixinServerPlayerOpenMenu`** — defers vanilla `openMenu(MenuProvider)` for jailed players via `JailTraffic` (Fabric API's `ExtendedScreenHandlerFactory` menus go through it too).
+- **Events Fabric API lacks**, each a thin mixin that calls `PlayerRestrictionHandler`/`ConnectionHandler` where NeoForge fires the event: **`MixinPlayerList`** (`placeNewPlayer` TAIL / `remove` HEAD: logged in / out), **`MixinCommands`** (`Commands.performCommand` HEAD, like `CommandEvent`: player commands, signed or not; console/RCON have no entity and pass), **`MixinPlayerDamage`** (`Player.actuallyHurt`: the damage after armor and effects is set to 0 before absorption is spent, like `LivingDamageEvent.Pre`; the hit itself still lands — knockback, armor wear — as on `main`; `ServerLivingEntityEvents.ALLOW_DAMAGE` would cancel the whole hit), **`MixinLivingEntityHeal`** (`heal`), **`MixinItemEntityPickup`** / **`MixinExperienceOrbPickup`** (`playerTouch`), **`MixinEntityStartRiding`** (`startRiding(Entity, boolean)`, also forced mounts like NeoForge's `EntityMountEvent`).
 
 ### 4.7 `data/`
 - **`DatabaseManager`** — single-threaded `ExecutorService` wrapping SQLite; **every public method is async** and the sync helpers are private, so check-then-write inside one task is atomic (`registerUserAsync` re-checks existence and `maxAccountsPerIP` next to the INSERT). `close()` waits for queued writes. The schema version lives in `PRAGMA user_version` (`SCHEMA_VERSION`; 0 = 1.2.0 or older): when an existing database is older, `initDatabase` first saves a consistent copy with `VACUUM INTO` as `serverconfig/directauth-backup-<timestamp>.db`, so server owners never need a manual backup before upgrading. Table:
@@ -153,7 +154,7 @@ Many mods act at first join or accept client packets without knowing about authe
 ## 5. Configuration & Localization
 
 ### 5.1 `ModConfig` (`world/serverconfig/DirectAuth-config.json`)
-Gson, pretty-printed. Loaded once on `ServerStartedEvent`; missing fields are filled with defaults and the file rewritten.
+Gson, pretty-printed. Loaded once on `SERVER_STARTED`; missing fields are filled with defaults and the file rewritten.
 
 | Group | Fields (defaults) |
 |---|---|
@@ -162,7 +163,7 @@ Gson, pretty-printed. Loaded once on `ServerStartedEvent`; missing fields are fi
 | Password | `minPasswordLength` (4), `maxPasswordLength` (32) |
 | Login flood | `maxLoginAttempts` (5), `loginCooldownMs` (3000), `loginLockoutSeconds` (300), `loginTimeout` (60s) |
 | Anti-bot | `registrationDelay` (1s), `maxAccountsPerIP` (5) |
-| Other mods | `deferredScreenPayloads` (Neo Origins, MCA, Pixelmon, Dragon Survival and Starter Kit screen payloads), `heldPayloadExceptions` (Starter Kit's timed reply), `logJailPayloads` (false; logs the payload ids jailed players receive, to find a new mod's screen), `otherModsDefaultsVersion`. Built-in ids live in `ModConfig.DEFAULT_SCREEN_PAYLOADS` / `DEFAULT_HELD_EXCEPTIONS` with the version that added them; bump `OTHER_MODS_DEFAULTS` when adding one so existing configs get it on load (ids an admin removed later don't come back). |
+| Other mods | `deferredScreenPayloads` (Neo Origins, MCA, Pixelmon, Dragon Survival and Starter Kit screen payloads), `heldPayloadExceptions` (Starter Kit's timed reply), `logJailPayloads` (false; logs the payload ids jailed players receive, to find a new mod's screen), `otherModsDefaultsVersion`. Built-in ids live in `ModConfig.DEFAULT_SCREEN_PAYLOADS` / `DEFAULT_HELD_EXCEPTIONS` with the version that added them; bump `OTHER_MODS_DEFAULTS` when adding one so existing configs get it on load (ids an admin removed later don't come back). | **On this branch the built-in ids are still `main`'s NeoForge mods** (Neo Origins `neoorigins:*` and Dragon Survival have no Fabric version; MCA Reborn, Pixelmon and Starter Kit may use other ids on Fabric — to be set when Fabric mods are tested).
 
 ### 5.2 `LangConfig` (`world/serverconfig/DirectAuth-lang-<code>.json`)
 Not in `assets/<modid>/lang/`. Messages are flat string fields on `LangConfig` (≈70 keys: `msgWelcome`, `errWrongPassword`, `msgAuthReminder`, `msgPremiumEnabled`, etc.). Resolved via `DirectAuth.getConfig().getLang().<field>`. Placeholders use `String.format` (`%d`, `%s`). Color codes use Minecraft `§` sequences.
@@ -186,20 +187,18 @@ Both `en` and `es` files are written on startup; the active one is selected by `
 All commands from repo root. Java 21 must be on `PATH` or via a Gradle toolchain provider.
 
 ```powershell
-.\gradlew build                 # compile + jar (output in build/libs/directauth-neoforge-1.21.1-<version>.jar)
-.\gradlew runClient             # dev client (run/ dir, DEBUG logs, REGISTRIES marker)
-.\gradlew runServer             # dev server
-.\gradlew runData               # data generation → src/generated/resources/
-.\gradlew runGameTestServer     # gametest harness
+.\gradlew build                 # compile + remapped jar with jar-in-jar sqlite (build/libs/directauth-fabric-1.21.1-<version>.jar)
+.\gradlew runServer             # dev server (run/ dir)
+.\gradlew runClient             # dev client (DirectAuth is server-only, so it is not loaded there)
 .\gradlew publish               # publish to local repo/ maven
 .\gradlew --refresh-dependencies
 ```
 
-- Mod metadata is **generated**: edit `src/main/templates/META-INF/neoforge.mods.toml`, not `src/main/resources/META-INF/neoforge.mods.toml`. The `generateModMetadata` task expands `${mod_id}`, `${mod_version}`, `${neo_version}`, etc. from `gradle.properties` and runs on IDE sync.
+- Mod metadata: `src/main/resources/fabric.mod.json`; `processResources` expands `${mod_id}`, `${mod_version}`, `${loader_version}`, etc. from `gradle.properties`.
 - No unit tests, no Checkstyle/Spotless, no pre-commit hooks. The only CI is `.github/workflows/build.yml` running `./gradlew build` on Ubuntu.
-- End-to-end smoke tests live in `tools/smoke-test/` (Linux, Node ≥ 22.5): `cd tools/smoke-test && npm ci && ./run-all.sh` builds the mod, runs the dev server in `runs/smoke-test/` (needs `eula=true` there) and drives it with Mineflayer bots, RCON and SQLite checks (~4 min, exit code ≠ 0 on failure). Run it after changing the auth flow, restrictions, Online Mode or admin commands, and add a test for new behavior. Not part of CI.
-- The smoke-test server is the `smokeServer` run: `runServer` plus the test mod in `src/testmod/` (source set `testmod`), which stands in for other mods (optional payloads both ways, a server-opened menu, first-join teleports, `/datest` commands). `runServer`, `runClient` and the jar only contain DirectAuth. CI's `gradlew build` does not compile the test mod; `run-all.sh` does (`testmodClasses`).
-- Tests with real third-party mods live in `tools/mod-tests/` (Linux, `xvfb-run`, ~6 GB RAM): `cd tools/mod-tests && node run.js [scenario...]` runs a NeoForge dev server with DirectAuth and the mods of each scenario, and a real NeoForge client under Xvfb driven by the `directauth_modtests` harness (separate Gradle build, newer NeoForge, mods pinned with sha512 in `mods.json`). One scenario per mod: screens at first join, packets an impostor could send, first-join teleports. Run it before a release and after changing anything in `network/` or the jail. Not part of CI.
+- End-to-end smoke tests live in `tools/smoke-test/` and still drive `main`'s NeoForge dev server (`smokeServer` run, test mod in `src/testmod/`); they have not been ported to this branch yet, and the test mod is not compiled here. Until then, check changes on a production Fabric server with Fabric API (`runs/fabric-server/`).
+- When the smoke test is ported, it should run the production jar (as on `forge-1.20.1`), since only that exercises the intermediary remapping of the mixins.
+- Tests with real third-party mods live in `tools/mod-tests/` (NeoForge only for now; not ported to Fabric).
 - Working dir for runs is `run/`. Logs and the dev world live there.
 
 ---
@@ -219,7 +218,7 @@ All commands from repo root. Java 21 must be on `PATH` or via a Gradle toolchain
 
 ### Singletons
 - Don't `new` managers. Use `DirectAuth.getLoginManager()`, `getDatabaseManager()`, `getPositionManager()`, `getConfig()`.
-- Initialization order matters: config and DB are wired in `ServerStartedEvent`, so don't touch them in the mod constructor.
+- Initialization order matters: config and DB are wired in `SERVER_STARTED`, so don't touch them in `onInitialize`.
 
 ### Anti-bot expectations
 When changing registration / login flow, preserve all of: `registrationDelay`, `maxAccountsPerIP` (checked atomically with the INSERT in `DatabaseManager#registerUserAsync`), grace-session IP binding, login cooldown, per-account max-attempts lockout (must not reset on reconnect), anchored-position enforcement, the `loginTimeout` kick, and the `network/` jail (held mod payloads, vanilla allowlist, deferred screens and menus). These are the security surface — regressions here are silent and dangerous.
@@ -228,17 +227,17 @@ When changing registration / login flow, preserve all of: `registrationDelay`, `
 An account's UUID never changes with its mode (see §4.2). Don't reintroduce moving player files between UUIDs: mods with data in memory overwrite them, and every mod would need its own migration rules. Changing *how* a login gets the account's UUID belongs in `MixinServerLoginPacketListenerImpl`. The smoke test logs bots in as premium through a fake session server (`premium()` in `tools/smoke-test/lib.js`).
 
 ### Things that look like bugs but aren't
-- The `assets/examplemod/lang/en_us.json` placeholder file is leftover from the NeoForge mod template; real strings live in `LangConfig`.
+- The `assets/examplemod/lang/en_us.json` placeholder file is leftover from the NeoForge mod template on `main`; real strings live in `LangConfig`.
 - `Documentation-NeoForge/` (NeoForged docs) and `Documentation/` (Forge docs) are git-ignored upstream docs, not project documentation. Don't `git add` them.
 
 ---
 
 ## 8. When You Change Things
 
-- **Adding a command** → new class in `commands/`, register it from `DirectAuth#registerCommands` (called by `RegisterCommandsEvent`).
+- **Adding a command** → new class in `commands/`, register it from `DirectAuth#registerCommands` (called by `CommandRegistrationCallback`).
 - **Adding a config field** → add field + default in `ModConfig`, the loader rewrites the JSON automatically on next start.
 - **Adding a message** → add field in `LangConfig` with both English and Spanish defaults; reference via `getConfig().getLang().<field>`. Existing language files keep the old text of a key, so when a message's meaning changes, rename its key.
 - **Adding a persistent column** → migrate the SQLite schema in `DatabaseManager#initDatabase` (ALTER TABLE with a try/catch on `SQLITE_ERROR` is the existing pattern), **bump `SCHEMA_VERSION`** so existing databases are backed up automatically before the change, and add the field to `UserData`. Keep the change readable by older versions (they ignore extra columns) and check it with `DOWNGRADE_REF=<previous release> ./run-all.sh` in `tools/smoke-test/`.
-- **Adding a restriction** → add a `@SubscribeEvent` method in `PlayerRestrictionHandler` and gate it on `PlayerRestrictionHandler#isRestricted` (which already excludes `FakePlayer`s). Add a check to the jail test in `tools/smoke-test/tests.js`, with a positive control after `/login` so the test cannot pass by accident.
+- **Adding a restriction** → register a Fabric API callback in `PlayerRestrictionHandler#register` (or, if there is none, add a mixin at the point where NeoForge fires the event on `main` that calls an `on*` method there) and gate it on `PlayerRestrictionHandler#isRestricted` (which already excludes `FakePlayer`s). Add a check to the jail test in `tools/smoke-test/tests.js`, with a positive control after `/login` so the test cannot pass by accident.
 
 Keep this file in sync with what's actually in the code. If you make an architectural change that contradicts a section here, update the section in the same PR.

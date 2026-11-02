@@ -4,7 +4,7 @@
 
 ![Build Status](https://github.com/marc-perez-dev/DirectAuth/actions/workflows/build.yml/badge.svg)
 
-DirectAuth is a **server-side** authentication mod for Minecraft NeoForge 1.21.1, also available for Forge 1.20.1 (on the [`forge-1.20.1`](https://github.com/marc-perez-dev/DirectAuth/tree/forge-1.20.1) branch). It provides a secure login system for offline-mode servers, with optional auto-login for players who own a legitimate Minecraft account.
+DirectAuth is a **server-side** authentication mod for Minecraft Fabric 1.21.1 (with Fabric API, Java 21). This branch is the Fabric 1.21.1 port; the NeoForge 1.21.1 version lives on [`main`](https://github.com/marc-perez-dev/DirectAuth/tree/main) and the Forge 1.20.1 one on [`forge-1.20.1`](https://github.com/marc-perez-dev/DirectAuth/tree/forge-1.20.1). It provides a secure login system for offline-mode servers, with optional auto-login for players who own a legitimate Minecraft account.
 
 It is strictly server-side: clients do **not** need to install this mod to join. Players can connect with any vanilla client.
 
@@ -55,8 +55,8 @@ Accounts that enabled Online Mode with DirectAuth 1.3.0 or older had their data 
 
 ## Installation
 
-1. Download the NeoForge 1.21.1 `.jar` from [Modrinth](https://modrinth.com/mod/directauth) or [CurseForge](https://www.curseforge.com/minecraft/mc-mods/directauth).
-2. Place it in the `mods` folder of your NeoForge 1.21.1 server.
+1. Download the Fabric 1.21.1 `.jar` from [Modrinth](https://modrinth.com/mod/directauth) or [CurseForge](https://www.curseforge.com/minecraft/mc-mods/directauth).
+2. Place it in the `mods` folder of your Fabric 1.21.1 server, together with [Fabric API](https://modrinth.com/mod/fabric-api).
 3. Restart the server.
 
 On first launch the following files are generated:
@@ -105,7 +105,7 @@ Until a player logs in, DirectAuth keeps them away from other mods:
 * **What their client sends to other mods** waits and runs once they log in; if they disconnect first, it never runs. Only the last packet of each kind is kept. This keeps someone who joins with another player's name from acting for that account, and one-time requests still work after login (Simple Voice Chat connects as soon as the player logs in).
 * **Op-only vanilla packets** (command blocks, structure blocks, difficulty, NBT queries, book editing, recipe placing, menu buttons) are ignored, even for an op's name.
 * **Chat** is dropped as it arrives, so no mod reads it either (MCA's villager AI would otherwise answer it).
-* **Screens other mods open when a player joins** are shown after `/register` or `/login`, so they do not cover the chat. Built in: Neo Origins, MCA Reborn (Destiny), Pixelmon, Dragon Survival and Starter Kit's kit choice. Menus the server opens (Tensura's race selection) also wait.
+* **Screens other mods open when a player joins** are shown after `/register` or `/login`, so they do not cover the chat. The built-in list still has the ids of the NeoForge mods `main` supports (Neo Origins, MCA Reborn, Pixelmon, Dragon Survival, Starter Kit); add the ids of your Fabric mods as described below. Menus the server opens also wait.
 * **First-join teleports** of other mods are kept: a player who has never played stays where the game or the mod put them, whether the mod moves them before or after DirectAuth sees them join.
 
 If another mod opens a screen at first join that hides the chat:
@@ -116,13 +116,13 @@ If another mod opens a screen at first join that hides the chat:
 
 Screens that only exist on the client (for example Welcome Screen) never reach the server. They usually close with Esc; if not, raise `loginTimeout`.
 
-These mods are tested with a real client before each release: Neo Origins, MCA Reborn, Pixelmon, Tensura: Reincarnated, Dragon Survival, Cobblemon, Vampirism, Werewolves, Epic Fight, Simple Voice Chat, The Aether, Skyblock Builder, Welcome Screen, Starter Kit and Female Gender.
+The NeoForge version on `main` is tested with a real client against a list of mods before each release; the Fabric port does not have such a list yet.
 
 ## Compatibility
 
-* **Loader**: NeoForge 1.21.1
+* **Loader**: Fabric 1.21.1 (Fabric Loader 0.20.1+ with Fabric API), Java 21
 * **Side**: Server-side only — works with any vanilla client and can be included in any modpack.
-* **Supported**: Dedicated servers and local LAN worlds.
+* **Supported**: Dedicated servers. The Fabric jar is marked server-only, so it does not load in singleplayer or LAN worlds.
 * **Not supported**: BungeeCord/Velocity networks that need player data synchronized across multiple server instances (e.g. Lobby → Survival transfers), since data is stored in the local world directory.
 
 ## 💖 Support the Project
