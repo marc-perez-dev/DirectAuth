@@ -302,6 +302,26 @@ const rconTest = async (cmd) => /Test passed/.test(await T.rcon(cmd))
   })
 
   const DEAD = process.env.DEAD || 'Dead'
+  await test('jail: login timeout kicks a player who joins dead and never respawns', async () => {
+    const NAME = process.env.DEADTO || 'DeadTo'
+    const b = await register(NAME, '127.0.0.16', PW, { options: { respawn: false } })
+    await T.rcon(`kill ${NAME}`)
+    await T.sleep(800)
+    T.assert(b.health === 0, `bot not dead: ${b.health}`)
+    await T.quit(b)
+    await T.waitGone(NAME)
+    await T.setConfig({ loginTimeout: 3 })
+    try {
+      // Desde otra IP (sin sesión de gracia): en la jaula y en la pantalla de muerte, sin reaparecer
+      const d = await joinOk(NAME, '127.0.0.17', { options: { respawn: false } })
+      T.assert(d.joinedDead, 'did not join dead')
+      await T.expect(d, L.msgLoginRequest)
+      await T.expectKick(d, L.msgTimeout, 8000)
+    } finally {
+      await T.setConfig({ loginTimeout: 60 })
+    }
+  })
+
   await test('respawn while jailed goes to world spawn, keeps anchor charge; /login uses the anchor', async () => {
     const b = await register(DEAD, process.env.DEAD_IP || '127.0.0.12', PW, { options: { respawn: false } })
     // Plataforma con un nexo cargado en el Nether
@@ -741,6 +761,50 @@ const rconTest = async (cmd) => /Test passed/.test(await T.rcon(cmd))
     await T.rcon(`summon minecraft:item ${p2[0]} ${p2[1] + 0.5} ${p2[2]} {Item:{id:"minecraft:emerald",Count:3b},PickupDelay:0}`)
     await T.sleep(1500)
     T.assert(await T.countItem(PICK, 'minecraft:emerald') === 3, 'control: could not pick up after login')
+  })
+
+  await test('vehicle on rejoin: the boat stays where it was and the jailed player is not riding it', async () => {
+    const NAME = process.env.RIDER || 'Rider'
+    let b = await register(NAME, '127.0.0.76')
+    await T.rcon('kill @e[type=boat]')
+    await T.rcon(`tp ${NAME} 40.5 -60 40.5`)
+    await T.sleep(500)
+    await T.rcon('summon minecraft:boat 40.5 -60 42.5 {Tags:["rideTest"]}')
+    await T.sleep(500)
+    const boat = Object.values(b.entities).find((e) => e.name === 'boat')
+    T.assert(boat, 'boat not visible')
+    b.mount(boat)
+    await T.sleep(800)
+    // 1.20.1 no admite predicados en línea: "on vehicle" pasa al vehículo, si lo hay
+    const riding = () => rconTest(`execute as ${NAME} on vehicle if entity @s[type=minecraft:boat]`)
+    T.assert(await riding(), 'control: could not mount the boat before logging out')
+    const boatPos = async () => {
+      const r = await T.rcon('data get entity @e[type=boat,tag=rideTest,limit=1] Pos')
+      const m = r.match(/\[(-?[\d.E-]+)d, (-?[\d.E-]+)d, (-?[\d.E-]+)d\]/)
+      return m ? m.slice(1).map(Number) : null
+    }
+    const before = await boatPos()
+    T.assert(before, 'boat not found before logging out')
+    await T.quit(b)
+    await T.waitGone(NAME)
+    // Vanilla quita el vehículo del mundo con el jugador y lo vuelve a poner al entrar
+    T.assert(!(await rconTest('execute if entity @e[type=boat,tag=rideTest]')), 'boat still in the world while its rider is offline')
+    // Desde otra IP (sin sesión de gracia): entra en la jaula
+    b = await joinOk(NAME, '127.0.0.77')
+    await T.expect(b, L.msgLoginRequest)
+    await T.sleep(1500)
+    const after = await boatPos()
+    T.assert(after, 'the boat was deleted when the jailed player rejoined')
+    T.assert(T.near(after, before, 1), `boat moved from ${before} to ${after}`)
+    T.assert(!(await riding()), 'the jailed player is riding the boat')
+    T.assert(T.near(await T.posOf(NAME), SPAWN, 1.6), `jailed rider not at spawn: ${await T.posOf(NAME)}`)
+    const count = await T.rcon('execute if entity @e[type=boat,tag=rideTest]')
+    T.assert(/count: 1\b/.test(count), `expected exactly one boat: ${count}`)
+    T.send(b, `/login ${PW}`)
+    await T.expect(b, L.msgAuthenticated)
+    await T.sleep(800)
+    T.assert(await boatPos(), 'boat gone after /login')
+    await T.rcon('kill @e[type=boat]')
   })
 
   await test('changepassword keeps Online Mode columns', async () => {
