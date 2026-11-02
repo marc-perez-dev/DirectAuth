@@ -302,6 +302,26 @@ const rconTest = async (cmd) => /Test passed/.test(await T.rcon(cmd))
   })
 
   const DEAD = process.env.DEAD || 'Dead'
+  await test('jail: login timeout kicks a player who joins dead and never respawns', async () => {
+    const NAME = process.env.DEADTO || 'DeadTo'
+    const b = await register(NAME, '127.0.0.16', PW, { options: { respawn: false } })
+    await T.rcon(`kill ${NAME}`)
+    await T.sleep(800)
+    T.assert(b.health === 0, `bot not dead: ${b.health}`)
+    await T.quit(b)
+    await T.waitGone(NAME)
+    await T.setConfig({ loginTimeout: 3 })
+    try {
+      // Desde otra IP (sin sesión de gracia): en la jaula y en la pantalla de muerte, sin reaparecer
+      const d = await joinOk(NAME, '127.0.0.17', { options: { respawn: false } })
+      T.assert(d.joinedDead, 'did not join dead')
+      await T.expect(d, L.msgLoginRequest)
+      await T.expectKick(d, L.msgTimeout, 8000)
+    } finally {
+      await T.setConfig({ loginTimeout: 60 })
+    }
+  })
+
   await test('respawn while jailed goes to world spawn, keeps anchor charge; /login uses the anchor', async () => {
     const b = await register(DEAD, process.env.DEAD_IP || '127.0.0.12', PW, { options: { respawn: false } })
     // Plataforma con un nexo cargado en el Nether

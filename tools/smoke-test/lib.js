@@ -88,21 +88,24 @@ function join (username, ip = '127.0.0.1', { timeout = 20000, options = {}, chan
       })
       bot._client.on('custom_payload', (p) => {
         if (bot._client.state !== 'configuration') return
-        if (p.channel === 'c:version') bot._client.write('custom_payload', { channel: 'c:version', data: Buffer.from([1, 1]) })
+        // Array de enteros (VarInt longitud + VarInt cada uno): solo la versión 1
+        if (p.channel === 'c:version') bot._client.write('custom_payload', { channel: 'c:version', data: Buffer.concat([varInt(1), varInt(1)]) })
         if (p.channel === 'c:register') {
           bot._client.write('custom_payload', {
             channel: 'c:register',
-            data: Buffer.concat([Buffer.from([1]), writeString('play'), Buffer.from([channels.length]), ...channels.map(writeString)])
+            data: Buffer.concat([varInt(1), writeString('play'), varInt(channels.length), ...channels.map(writeString)])
           })
         }
       })
     }
     bot._client.on('custom_payload', (p) => {
       if (p.channel.startsWith('directauth_test:')) bot.payloads.push({ channel: p.channel, value: readString(p.data) })
-      // Menús con datos extra de Fabric API (ExtendedScreenHandlerFactory): id del tipo, syncId (byte), título...
+      // Menús con datos extra de Fabric API (ExtendedScreenHandlerFactory): id del tipo (String),
+      // syncId (Fabric lo escribe con writeByte, sin signo hasta 255), título...
       if (p.channel === 'fabric-screen-handler-api-v1:open_screen') {
-        const typeLength = p.data[0] // ids cortos: longitud en un byte
-        bot.extendedWindows.push({ type: p.data.slice(1, 1 + typeLength).toString('utf8'), windowId: p.data[1 + typeLength] })
+        const type = readVarInt(p.data, 0)
+        const end = type.offset + type.value
+        bot.extendedWindows.push({ type: p.data.slice(type.offset, end).toString('utf8'), windowId: p.data.readUInt8(end) })
       }
     })
     bot._client.on('open_window', (p) => bot.windows.push(p.windowId))
@@ -127,15 +130,23 @@ function join (username, ip = '127.0.0.1', { timeout = 20000, options = {}, chan
 // Los payloads de prueba son un String con la codificación de ByteBufCodecs.STRING_UTF8
 function writeString (s) {
   const body = Buffer.from(s, 'utf8')
-  const len = []
-  let n = body.length
-  do { let b = n & 0x7f; n >>>= 7; if (n) b |= 0x80; len.push(b) } while (n)
-  return Buffer.concat([Buffer.from(len), body])
+  return Buffer.concat([varInt(body.length), body])
+}
+/** VarInt de Minecraft desde `offset`: { value, offset } (offset tras el VarInt). */
+function readVarInt (buf, offset) {
+  let value = 0; let shift = 0; let i = offset
+  for (;;) {
+    if (i >= buf.length || shift > 28) throw new Error(`bad VarInt at ${offset}`)
+    const b = buf[i++]
+    value |= (b & 0x7f) << shift
+    if (!(b & 0x80)) break
+    shift += 7
+  }
+  return { value, offset: i }
 }
 function readString (buf) {
-  let n = 0; let shift = 0; let i = 0
-  for (;;) { const b = buf[i++]; n |= (b & 0x7f) << shift; if (!(b & 0x80)) break; shift += 7 }
-  return buf.slice(i, i + n).toString('utf8')
+  const len = readVarInt(buf, 0)
+  return buf.slice(len.offset, len.offset + len.value).toString('utf8')
 }
 /** Envía al servidor un payload de mod (como lo haría el cliente de otra mod). */
 function sendPayload (bot, channel, value) {

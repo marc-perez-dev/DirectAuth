@@ -4,6 +4,16 @@
 source "$(dirname "$0")/common.sh"
 
 [ -d node_modules ] || npm ci || exit 1
+# DOWNGRADE_REF tiene que ser una versión de Fabric de DirectAuth (main es NeoForge): se comprueba
+# antes de nada, no después de toda la pasada
+if [ -n "$DOWNGRADE_REF" ]; then
+  if ! git -C "$REPO" cat-file -e "$DOWNGRADE_REF:src/main/resources/fabric.mod.json" 2>/dev/null \
+      || ! git -C "$REPO" show "$DOWNGRADE_REF:build.gradle" 2>/dev/null | grep -q 'fabric-loom'; then
+    echo "DOWNGRADE_REF=$DOWNGRADE_REF is not a Fabric build of DirectAuth (no src/main/resources/fabric.mod.json or Fabric Loom in its build.gradle)."
+    echo "Use a Fabric release tag or commit of this branch; main is NeoForge."
+    exit 1
+  fi
+fi
 (cd "$REPO" && bash gradlew build testmodJar -q --no-daemon -Dorg.gradle.jvmargs=-Xmx2G) || exit 1
 
 stop_server || fail=1
@@ -17,7 +27,7 @@ node tests.js || fail=1
 echo "=== Restart tests"
 ./restart-run.sh || fail=1
 if [ -n "$DOWNGRADE_REF" ]; then
-  # Volver a una versión anterior (p. ej. DOWNGRADE_REF=main o la última release) y regresar
+  # Volver a una versión anterior de Fabric (la última release de Fabric) y regresar
   echo "=== Downgrade to $DOWNGRADE_REF and back"
   OLD="$(mktemp -d)/directauth-old"
   trap 'git -C "$REPO" worktree remove --force "$OLD" 2>/dev/null' EXIT

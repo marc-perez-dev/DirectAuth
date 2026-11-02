@@ -23,6 +23,10 @@ FABRIC_API_JAR="fabric-api-$FABRIC_API.jar"
 JAVA="${JAVA21:-$(command -v java)}"
 
 [ -x "$JAVA" ] || { echo "Java 21 not found: set JAVA21=/path/to/java"; exit 1; }
+# Versión mayor de Java (java.specification.version: "21", o "1.8" en las antiguas)
+JAVA_MAJOR=$("$JAVA" -XshowSettings:properties -version 2>&1 | sed -n 's/^ *java.specification.version = //p')
+JAVA_MAJOR=${JAVA_MAJOR#1.}
+[ "${JAVA_MAJOR:-0}" -ge 21 ] 2>/dev/null || { echo "Minecraft 1.21.1 needs Java 21 or newer, but $JAVA is Java ${JAVA_MAJOR:-unknown}: set JAVA21=/path/to/java"; exit 1; }
 # El jar de la versión de ese checkout (build/libs puede tener los de otras versiones y loaders)
 VERSION=$(sed -n 's/^mod_version=//p' "$SRC/gradle.properties")
 JARS=()

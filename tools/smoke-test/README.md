@@ -38,12 +38,13 @@ A full run takes about 5 minutes. Before a release, also check that going back t
 version still works (players keep logging in on a database written by this version):
 
 ```bash
-DOWNGRADE_REF=main ./run-all.sh   # any git ref: a release tag, a commit, a branch
+DOWNGRADE_REF=<ref> ./run-all.sh   # a Fabric release tag or commit of this branch
 ```
 
 It builds that ref in a temporary `git worktree`, runs it against the same world, logs in with
-accounts written by this version, then starts this version again. The ref must be a Fabric version
-of DirectAuth (this branch's history); `main` is NeoForge.
+accounts written by this version, then starts this version again. The ref must be a Fabric build of
+DirectAuth (`run-all.sh` checks for `src/main/resources/fabric.mod.json` and Fabric Loom before
+running anything); `main` is NeoForge, and there is no Fabric release to downgrade to yet.
 
 To work on a single test against the current world:
 

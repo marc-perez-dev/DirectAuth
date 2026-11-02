@@ -111,6 +111,11 @@ def testmodDevJar = tasks.register('testmodDevJar', Jar) {
     destinationDirectory = layout.buildDirectory.dir('testmod-dev')
 }
 
+// CI (gradlew build) compiles the test mod too, so it cannot rot; it is never in the release jar
+tasks.named('build') {
+    dependsOn tasks.named('testmodClasses')
+}
+
 // The test mod for the smoke test, remapped like the release jar: build/testmod/directauth_test-1.0.0.jar
 tasks.register('testmodJar', net.fabricmc.loom.task.RemapJarTask) {
     dependsOn testmodDevJar

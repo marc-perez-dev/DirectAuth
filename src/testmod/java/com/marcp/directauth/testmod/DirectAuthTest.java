@@ -149,11 +149,13 @@ public class DirectAuthTest implements ModInitializer {
     private static String readString(byte[] bytes) {
         int length = 0, shift = 0, i = 0;
         while (true) {
+            if (i >= bytes.length || shift > 28) throw new IllegalArgumentException("bad VarInt length");
             byte b = bytes[i++];
             length |= (b & 0x7f) << shift;
             if ((b & 0x80) == 0) break;
             shift += 7;
         }
+        if (length < 0 || length > bytes.length - i) throw new IllegalArgumentException("string length " + length + " out of bounds");
         return new String(bytes, i, length, StandardCharsets.UTF_8);
     }
 
