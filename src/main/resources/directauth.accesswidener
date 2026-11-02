@@ -1,0 +1,7 @@
+accessWidener v2 named
+# El login mixin guarda y cambia el estado del login (ServerLoginPacketListenerImpl.State)
+accessible class net/minecraft/server/network/ServerLoginPacketListenerImpl$State
+# La conexión de un jugador (NeoForge añade getConnection(); en vanilla es un campo protegido)
+accessible field net/minecraft/server/network/ServerCommonPacketListenerImpl connection Lnet/minecraft/network/Connection;
+# AuthTasks reconoce los comandos que llegan por RCON (NeoForge lo hace público con un AT)
+accessible field net/minecraft/commands/CommandSourceStack source Lnet/minecraft/commands/CommandSource;
