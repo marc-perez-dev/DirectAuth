@@ -14,6 +14,7 @@
     "MixinConnection",
     "MixinServerPlayerOpenMenu",
     "MixinPlayerList",
+    "MixinServerPlayerSave",
     "ServerGamePacketListenerAccessor"
   ],
   "injectors": {
