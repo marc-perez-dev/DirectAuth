@@ -211,7 +211,9 @@ async function quitAll () {
 let rconClient = null
 async function rcon (cmd) {
   if (!rconClient) {
-    rconClient = await Rcon.connect({ host: '127.0.0.1', port: 25575, password: 'smoketest' })
+    // Los comandos de admin de DirectAuth esperan su resultado hasta 30 s (MixinRconConsoleSource):
+    // con los 2 s por defecto de rcon-client, una consulta lenta a Mojang hace fallar la prueba
+    rconClient = await Rcon.connect({ host: '127.0.0.1', port: 25575, password: 'smoketest', timeout: 35000 })
   }
   return strip(await rconClient.send(cmd))
 }
