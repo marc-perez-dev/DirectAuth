@@ -19,6 +19,7 @@
     "MixinConnection",
     "MixinServerPlayerOpenMenu",
     "MixinPlayerList",
+    "MixinServerPlayerSave",
     "MixinNetworkHooksOpenScreen",
     "MixinSimpleChannel",
     "MixinPixelmonSimpleChannel"

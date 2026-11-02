@@ -50,6 +50,9 @@ public class PlayerRestrictionHandler {
     /** Levanta las restricciones de un jugador que acaba de autenticarse. */
     public static void release(ServerPlayer player) {
         removeAnchor(player);
+        // El vehículo en el que salió, apartado mientras estaba sin autenticar (con la posición ya
+        // restaurada, como en PlayerList.placeNewPlayer)
+        JailedVehicles.restore(player);
         // Resincronizar HUD de efectos (limpiados al entrar en limbo)
         resyncEffectsToClient(player);
         // Pantallas y menús de otras mods aplazados, y lo que su cliente les envió en la jaula
@@ -100,41 +103,26 @@ public class PlayerRestrictionHandler {
     public void onServerTick(TickEvent.ServerTickEvent event) {
         if (event.phase != TickEvent.Phase.END) return;
         MinecraftServer server = event.getServer();
-        for (ServerPlayer player : List.copyOf(server.getPlayerList().getPlayers())) {
-            // Como EntityTickEvent: solo jugadores que el nivel sigue tickeando. Un jugador muerto
-            // sale del nivel tras la animación de muerte y su tickCount deja de avanzar, pero el
-            // timeout le sigue contando: si no, nadie expulsaría a quien se queda en la pantalla
-            // de muerte de una cuenta ajena
-            if (!player.isRemoved()) tickPlayer(player);
-            else tickRemovedPlayer(server, player);
-        }
-    }
-
-    /** Muerto y fuera del nivel: solo el timeout y el recordatorio, con el tick del servidor. */
-    private void tickRemovedPlayer(MinecraftServer server, ServerPlayer player) {
-        if (player.hasDisconnected() || !isNotAuth(player)) return;
         int ticks = server.getTickCount();
-        if (ticks % 20 == 0 && DirectAuth.getLoginManager().hasTimedOut(player)) {
-            player.connection.disconnect(Component.literal(DirectAuth.getConfig().getLang().msgTimeout));
-        } else if (ticks % 100 == 0) {
-            sendReminder(player);
+        for (ServerPlayer player : List.copyOf(server.getPlayerList().getPlayers())) {
+            if (isNotAuth(player)) {
+                // Timeout y recordatorio con el tick del servidor: el de un jugador muerto deja de
+                // avanzar al salir del nivel tras la animación de muerte, y aun así tiene que
+                // expulsarse (si no, cualquiera podría quedarse en la pantalla de muerte de una
+                // cuenta ajena). Verificar Timeout (Kick) cada 20 ticks (1 segundo) para no saturar
+                if (ticks % 20 == 0 && DirectAuth.getLoginManager().hasTimedOut(player)) {
+                    player.connection.disconnect(Component.literal(DirectAuth.getConfig().getLang().msgTimeout));
+                    continue;
+                }
+                if (ticks % 100 == 0) sendReminder(player);
+            }
+            // Como EntityTickEvent: el ancla, solo para los jugadores que el nivel sigue tickeando
+            if (!player.isRemoved()) tickPlayer(player);
         }
     }
 
     private void tickPlayer(ServerPlayer player) {
         if (isNotAuth(player)) {
-            // Verificar Timeout (Kick) cada 20 ticks (1 segundo) para no saturar
-            if (player.tickCount % 20 == 0) {
-                if (DirectAuth.getLoginManager().hasTimedOut(player)) {
-                    player.connection.disconnect(Component.literal(DirectAuth.getConfig().getLang().msgTimeout));
-                    return; // Salimos para no ejecutar el resto de lógica
-                }
-            }
-
-            // Volvió a montar en su vehículo al entrar (ver onMount) y aún no se le ha
-            // teleportado al spawn: se baja, y el vehículo se queda donde estaba
-            if (player.isPassenger()) player.stopRiding();
-
             UUID uuid = player.getUUID();
 
             Anchor anchor = anchorPositions.computeIfAbsent(uuid,
@@ -154,8 +142,6 @@ public class PlayerRestrictionHandler {
             }
             
             // Removed player.clearFire() as fire ticks will be restored on authentication.
-            
-            if (player.tickCount % 100 == 0) sendReminder(player);
         } 
         else if (anchorPositions.containsKey(player.getUUID())) {
             anchorPositions.remove(player.getUUID());
@@ -164,16 +150,6 @@ public class PlayerRestrictionHandler {
 
     private static void sendReminder(ServerPlayer player) {
         player.displayClientMessage(Component.literal(DirectAuth.getConfig().getLang().msgAuthReminder), true);
-    }
-
-    /**
-     * Jugador al que PlayerList.placeNewPlayer está colocando (MixinPlayerList), solo en el hilo
-     * del servidor. Mientras tanto puede volver a montar en su vehículo (ver onMount).
-     */
-    private static ServerPlayer beingPlaced;
-
-    public static void setBeingPlaced(ServerPlayer player) {
-        beingPlaced = player;
     }
 
     // --- (El resto de eventos se mantienen igual que en tu código original) ---
@@ -204,17 +180,9 @@ public class PlayerRestrictionHandler {
         // INTERACT_AT: lo usan p. ej. los armor stands para cambiar equipo
         if (isNotAuth(event.getEntity())) event.setCanceled(true);
     }
-    /**
-     * EntityMountEvent se dispara también con force. Excepto mientras PlayerList.placeNewPlayer lo
-     * coloca (MixinPlayerList): ahí vuelve a montar con force el vehículo en el que se desconectó,
-     * y si se le impidiera, vanilla eliminaría el vehículo y sus pasajeros ("Couldn't reattach
-     * entity to player"). Después, la jaula lo desmonta (el teleport al spawn de ConnectionHandler
-     * o tickPlayer) y el vehículo se queda donde estaba.
-     */
     @SubscribeEvent
     public void onMount(EntityMountEvent event) {
-        if (event.isMounting() && isNotAuth(event.getEntityMounting())
-                && event.getEntityMounting() != beingPlaced) event.setCanceled(true);
+        if (event.isMounting() && isNotAuth(event.getEntityMounting())) event.setCanceled(true);
     }
     @SubscribeEvent
     public void onItemPickup(EntityItemPickupEvent event) {

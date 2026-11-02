@@ -47,6 +47,7 @@ public class ConnectionHandler {
         DirectAuth.closeDatabase();
         DirectAuth.getLoginManager().shutdown();
         PlayerRestrictionHandler.clearAnchors();
+        JailedVehicles.clear();
         ConfirmationManager.clear();
         JailTraffic.clear();
     }
