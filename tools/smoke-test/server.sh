@@ -16,7 +16,7 @@ prop () { sed -n "s/^$1=//p" "$REPO/gradle.properties"; }
 MC=$(prop minecraft_version)
 LOADER=$(prop loader_version)
 FABRIC_API=$(prop fabric_api_version)
-INSTALLER=1.1.2
+INSTALLER=$(prop fabric_server_launcher_version)
 LAUNCHER="fabric-server-mc.$MC-loader.$LOADER-launcher.$INSTALLER.jar"
 FABRIC_API_JAR="fabric-api-$FABRIC_API.jar"
 # Java 21 (el de Minecraft 1.21.1): JAVA21 o el java del PATH

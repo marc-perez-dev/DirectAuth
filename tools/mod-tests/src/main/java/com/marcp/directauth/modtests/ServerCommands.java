@@ -7,16 +7,12 @@ import com.marcp.directauth.modtests.checks.OriginsChecks;
 import com.marcp.directauth.modtests.checks.TensuraChecks;
 import com.marcp.directauth.modtests.checks.VoiceChatChecks;
 import com.mojang.brigadier.CommandDispatcher;
-import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.commands.arguments.EntityArgument;
-import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
-import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
-import net.minecraft.stats.Stats;
 import net.fabricmc.loader.api.FabricLoader;
 
 import java.util.LinkedHashMap;
@@ -43,18 +39,7 @@ final class ServerCommands {
 
         LiteralArgumentBuilder<CommandSourceStack> root = Commands.literal("mt")
             .requires(source -> source.hasPermission(2))
-            .then(Commands.literal("ping").executes(ctx -> reply(ctx.getSource(), "mt pong")))
-            // Estadística personalizada (p. ej. vampirism:amount_bitten)
-            .then(Commands.literal("stat")
-                .then(Commands.argument("player", EntityArgument.player())
-                    .then(Commands.argument("stat", StringArgumentType.greedyString())
-                        .executes(ctx -> {
-                            ServerPlayer player = EntityArgument.getPlayer(ctx, "player");
-                            // Stats.CUSTOM necesita la instancia registrada, no un ResourceLocation igual
-                            ResourceLocation stat = BuiltInRegistries.CUSTOM_STAT.get(ResourceLocation.parse(StringArgumentType.getString(ctx, "stat")));
-                            String value = stat == null ? "unknown stat" : String.valueOf(player.getStats().getValue(Stats.CUSTOM.get(stat)));
-                            return reply(ctx.getSource(), "mt stat " + player.getGameProfile().getName() + ": " + value);
-                        }))));
+            .then(Commands.literal("ping").executes(ctx -> reply(ctx.getSource(), "mt pong")));
         for (var check : checks.entrySet()) {
             root.then(Commands.literal(check.getKey())
                 .then(Commands.argument("player", EntityArgument.player())

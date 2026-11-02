@@ -42,7 +42,7 @@ public interface Scenario {
      */
     static void registerNewChecking(ClientDriver d, String what, String screenPrefix) throws Exception {
         joinNew(d);
-        // Las mods abren su pantalla al entrar o unos segundos después (Dragon Survival: 5 s)
+        // Las mods abren su pantalla al entrar o unos segundos después (Starter Kit: medio segundo)
         d.sleep(7000);
         d.check(what + " hidden while jailed (new player)", !d.screenName().startsWith(screenPrefix), d.screenName());
         register(d);
@@ -72,15 +72,6 @@ public interface Scenario {
         String prefix = "mt " + check.split(" ")[0] + " " + player + ": ";
         if (!reply.startsWith(prefix)) throw new IllegalStateException("unexpected reply to /mt " + check + ": " + reply);
         return reply.substring(prefix.length());
-    }
-
-    /** Estadística personalizada del jugador ({@code /mt stat}). */
-    static int stat(ClientDriver d, String stat) throws Exception {
-        String player = d.mc().getUser().getName();
-        String reply = d.rcon("mt stat " + player + " " + stat).trim();
-        String prefix = "mt stat " + player + ": ";
-        if (!reply.startsWith(prefix)) throw new IllegalStateException("unexpected reply to /mt stat " + stat + ": " + reply);
-        return Integer.parseInt(reply.substring(prefix.length()));
     }
 
     /** Espera a que {@code /mt <check>} valga {@code expected}; devuelve si lo ha hecho. */

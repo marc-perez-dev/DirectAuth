@@ -18,6 +18,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
+import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -91,7 +92,7 @@ public final class ClientDriver {
         }
     }
 
-    /** "neo-origins" -> "NeoOrigins" */
+    /** "female-gender" -> "FemaleGender" */
     private static String className(String scenario) {
         StringBuilder b = new StringBuilder();
         for (String part : scenario.split("[-_]")) {
@@ -233,8 +234,8 @@ public final class ClientDriver {
         Pattern pattern = Pattern.compile(regex);
         long end = System.currentTimeMillis() + timeoutMs;
         while (System.currentTimeMillis() < end) {
-            for (int i = chatMark; i < chat.size(); i++) {
-                if (pattern.matcher(chat.get(i)).find()) return chat.get(i);
+            for (String message : chatFrom(chatMark)) {
+                if (pattern.matcher(message).find()) return message;
             }
             Thread.sleep(100);
         }
@@ -252,7 +253,9 @@ public final class ClientDriver {
 
     /** Mensajes de chat recibidos desde una posición ({@link #chatPosition}). */
     public List<String> chatFrom(int position) {
-        return List.copyOf(chat.subList(Math.min(position, chat.size()), chat.size()));
+        // Una sola instantánea: subList de una CopyOnWriteArrayList falla si llega un mensaje entretanto
+        String[] snapshot = chat.toArray(new String[0]);
+        return List.of(Arrays.copyOfRange(snapshot, Math.min(position, snapshot.length), snapshot.length));
     }
 
     /** Clase de la pantalla abierta ("none" si no hay). */

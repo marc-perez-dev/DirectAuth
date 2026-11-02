@@ -24,7 +24,7 @@ const PROPS = Object.fromEntries(fs.readFileSync(path.join(REPO, 'gradle.propert
 const MC = PROPS.minecraft_version
 const LOADER = PROPS.loader_version
 const FABRIC_API = PROPS.fabric_api_version
-const SERVER_LAUNCHER_VERSION = '1.1.2'
+const SERVER_LAUNCHER_VERSION = PROPS.fabric_server_launcher_version
 // Instalaciones compartidas por los escenarios: el lanzador de servidor de Fabric con el servidor
 // vanilla y sus librerías, y un cliente como el de un launcher (librerías, assets)
 const SERVER_HOME = path.join(RUNS, '_server')
@@ -78,12 +78,25 @@ async function fetchFile (url, file, expected = {}) {
   return file
 }
 
+/**
+ * Como fetchFile, pero un fichero que ya existe no se vuelve a comprobar: fetchFile solo lo deja en
+ * su sitio después de comprobar el hash, así que existir quiere decir que se comprobó al instalarlo.
+ */
+async function ensureFile (url, file, expected) {
+  if (!fs.existsSync(file)) await fetchFile(url, file, expected)
+  return file
+}
+
 const verified = new Set()
 async function download (mod) {
   const file = path.join(CACHE, mod.file)
   if (verified.has(file)) return file
-  if (!fs.existsSync(file) || hashFile('sha512', file) !== mod.sha512) log(`  downloading ${mod.file}`)
-  await fetchFile(mod.url, file, { sha512: mod.sha512 })
+  // Un solo hash del jar de la caché; si no cuadra se borra y fetchFile lo descarga y comprueba
+  if (fs.existsSync(file) && hashFile('sha512', file) !== mod.sha512) fs.rmSync(file)
+  if (!fs.existsSync(file)) {
+    log(`  downloading ${mod.file}`)
+    await fetchFile(mod.url, file, { sha512: mod.sha512 })
+  }
   verified.add(file)
   return file
 }
@@ -141,23 +154,30 @@ function fabricModJson (entries) {
   return JSON.parse(entry.read().toString('utf8').replace(/[\r\n\t]+/g, ' '))
 }
 
+// Versión de las reglas de extracción de extractNested: cambiarla invalida nested.stamp
+const NESTED_RULES = 2
+
 /**
  * Jars anidados (jar-in-jar) de una mod, recursivamente: las mods van a nested/ (Loom las remapea
- * para compilar el arnés) y las librerías normales (Kotlin...) a nested-libs/. Los módulos de Fabric
- * API se saltan: el arnés compila contra la Fabric API de DirectAuth.
+ * para compilar el arnés) y las librerías normales (Kotlin...) a nested-libs/, con el nombre del jar
+ * que los contiene delante (dos mods pueden anidar jars distintos con el mismo nombre). Se saltan
+ * los módulos de Fabric API (el arnés compila contra la Fabric API de DirectAuth) y MixinExtras (no
+ * hace falta para compilar y cada mod lleva su versión).
  */
-function extractNested (buf, nested, nestedLibs) {
+function extractNested (buf, parent, nested, nestedLibs) {
   const entries = zipEntries(buf)
   for (const jar of fabricModJson(entries)?.jars || []) {
     const entry = entries.find((e) => e.name === jar.file)
     if (!entry) continue
     const data = entry.read()
     const meta = fabricModJson(zipEntries(data))
-    if (meta && ((/^fabric-/.test(meta.id) && meta.id !== 'fabric-language-kotlin') || meta.id === 'mixinextras')) continue
+    const fabricApiModule = meta && (meta.id === 'fabric-api' || meta.custom?.['fabric-api:module-lifecycle'] !== undefined)
+    if (fabricApiModule || meta?.id === 'mixinextras') continue
     // Loom da a las librerías que anida un fabric.mod.json generado: no son mods, no se remapean
     const isMod = meta && !meta.custom?.['fabric-loom:generated']
-    fs.writeFileSync(path.join(isMod ? nested : nestedLibs, path.basename(jar.file)), data)
-    extractNested(data, nested, nestedLibs)
+    const name = `${parent}__${path.basename(jar.file)}`
+    fs.writeFileSync(path.join(isMod ? nested : nestedLibs, name), data)
+    extractNested(data, path.basename(jar.file, '.jar'), nested, nestedLibs)
   }
 }
 
@@ -167,7 +187,7 @@ async function fetchAll () {
   const nestedLibs = path.join(CACHE, 'nested-libs')
   for (const d of [nested, nestedLibs]) fs.mkdirSync(d, { recursive: true })
   const stamp = path.join(CACHE, 'nested.stamp')
-  const expected = Object.values(MANIFEST.mods).map((m) => m.sha512).sort().join('\n')
+  const expected = [`rules ${NESTED_RULES}`, ...Object.values(MANIFEST.mods).map((m) => m.sha512).sort()].join('\n')
   for (const mod of Object.values(MANIFEST.mods)) await download(mod)
   if (fs.existsSync(stamp) && fs.readFileSync(stamp, 'utf8') === expected) return
   for (const d of [nested, nestedLibs]) {
@@ -178,7 +198,7 @@ async function fetchAll () {
   for (const f of fs.readdirSync(CACHE)) {
     if (f.endsWith('.jar') && !Object.values(MANIFEST.mods).some((m) => m.file === f)) fs.rmSync(path.join(CACHE, f))
   }
-  for (const mod of Object.values(MANIFEST.mods)) extractNested(fs.readFileSync(path.join(CACHE, mod.file)), nested, nestedLibs)
+  for (const mod of Object.values(MANIFEST.mods)) extractNested(fs.readFileSync(path.join(CACHE, mod.file)), path.basename(mod.file, '.jar'), nested, nestedLibs)
   fs.writeFileSync(stamp, expected)
 }
 
@@ -265,18 +285,18 @@ async function installClient () {
     await fetchFile(entry.url, vanillaJson, { sha1: entry.sha1 })
   }
   const vanilla = readJson(vanillaJson)
-  await fetchFile(vanilla.downloads.client.url, path.join(CLIENT_HOME, 'versions', MC, `${MC}.jar`), { sha1: vanilla.downloads.client.sha1 })
+  await ensureFile(vanilla.downloads.client.url, path.join(CLIENT_HOME, 'versions', MC, `${MC}.jar`), { sha1: vanilla.downloads.client.sha1 })
   for (const lib of vanilla.libraries) {
     const a = lib.downloads?.artifact
-    if (a && allowed(lib.rules)) await fetchFile(a.url, path.join(CLIENT_HOME, 'libraries', a.path), { sha1: a.sha1 })
+    if (a && allowed(lib.rules)) await ensureFile(a.url, path.join(CLIENT_HOME, 'libraries', a.path), { sha1: a.sha1 })
   }
   const fabricJson = path.join(CLIENT_HOME, 'versions', FABRIC_PROFILE, `${FABRIC_PROFILE}.json`)
   if (!fs.existsSync(fabricJson)) await fetchFile(`https://meta.fabricmc.net/v2/versions/loader/${MC}/${LOADER}/profile/json`, fabricJson)
   for (const lib of readJson(fabricJson).libraries) {
-    await fetchFile(lib.url.replace(/\/?$/, '/') + mavenPath(lib.name), path.join(CLIENT_HOME, 'libraries', mavenPath(lib.name)), { sha1: lib.sha1 })
+    await ensureFile(lib.url.replace(/\/?$/, '/') + mavenPath(lib.name), path.join(CLIENT_HOME, 'libraries', mavenPath(lib.name)), { sha1: lib.sha1 })
   }
   const index = path.join(CLIENT_HOME, 'assets/indexes', `${vanilla.assetIndex.id}.json`)
-  await fetchFile(vanilla.assetIndex.url, index, { sha1: vanilla.assetIndex.sha1 })
+  await ensureFile(vanilla.assetIndex.url, index, { sha1: vanilla.assetIndex.sha1 })
   const objects = Object.values(readJson(index).objects)
   const missing = objects.filter((o) => !fs.existsSync(path.join(CLIENT_HOME, 'assets/objects', o.hash.slice(0, 2), o.hash)))
   if (missing.length) log(`  downloading ${missing.length} assets`)
