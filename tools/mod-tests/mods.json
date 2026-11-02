@@ -1,203 +1,117 @@
 {
-  "_comment": "Mods de las pruebas con mods reales (NeoForge 1.21.1), fijadas a la versi\u00f3n revisada. run.js las descarga en build/mod-cache y comprueba el sha512. side: both, client o server; requires: dependencias obligatorias.",
+  "_comment": "Mods de las pruebas con mods reales (Fabric 1.21.1), fijadas a la versi\u00f3n revisada. run.js las descarga en build/mod-cache y comprueba el sha512. side: both, client o server; requires: dependencias obligatorias que no van dentro del jar (Fabric API la pone run.js).",
   "mods": {
-    "neo-origins": {
-      "version": "v2.2.30+1.21.1",
-      "file": "neoorigins-2.2.30+1.21.1.jar",
-      "url": "https://cdn.modrinth.com/data/RUtQ9kfe/versions/yJ1F6JTf/neoorigins-2.2.30%2B1.21.1.jar",
-      "sha512": "a60a5a2e11fbc91c706e7b7093f752907da101e68e13c98910584faf71d255de1e0d2d592b619d774401b3eb7810b52cbaea80ce874cce9340f127d9b1ef5927",
+    "origins": {
+      "version": "1.13.0-pre.4+mc.1.21.1",
+      "file": "Origins-1.13.0-pre.4+mc.1.21.1.jar",
+      "url": "https://cdn.modrinth.com/data/3BeIrqZR/versions/6LJ1AFwo/Origins-1.13.0-pre.4%2Bmc.1.21.1.jar",
+      "sha512": "5ad65d671d298642425c8b1ed600a023fe1f64668e867785c1a0ac9f818499dbfb6b212bce88204cdaf1ef11894c8a3c2da9f98656ba297adfe5ae281676ec02",
       "side": "both",
       "requires": []
     },
     "minecraft-comes-alive-reborn": {
       "version": "7.7.36+1.21.1",
-      "file": "mca-neoforge-7.7.36-beta.3+1.21.1.jar",
-      "url": "https://cdn.modrinth.com/data/1W98a849/versions/S2Ln2tIn/mca-neoforge-7.7.36-beta.3%2B1.21.1.jar",
-      "sha512": "d001d10a3c0481cfe25fb22b89b11608bf3cf1290139edd119f3f9bf8d544c369a5a0ea57293eeac3e1390b97f8ece6d2c85f84b753f54db33c4218545356a01",
-      "side": "both",
-      "requires": []
-    },
-    "pixelmon": {
-      "version": "9.4.2",
-      "file": "Pixelmon-1.21.1-9.4.2-universal.jar",
-      "url": "https://cdn.modrinth.com/data/59ZceYlU/versions/l63weWf0/Pixelmon-1.21.1-9.4.2-universal.jar",
-      "sha512": "507db6f08d0ac5816c834863a563383e008fc77971be4e842bcfd73bc24dc18296b66bea34c8189b7989c0cceee87be306d7da7f19851e1fd1fe9a2e23064e97",
+      "file": "mca-fabric-7.7.36-beta.3+1.21.1.jar",
+      "url": "https://cdn.modrinth.com/data/1W98a849/versions/eUYBilCG/mca-fabric-7.7.36-beta.3%2B1.21.1.jar",
+      "sha512": "cd0b1a87eaf251729563d8ff69676824a2261b45da68c3ceb415c369cbc86ff0fc2b37bec440dde7845807e6c6448399c34943a343eeeb48d2f01435230485bc",
       "side": "both",
       "requires": []
     },
     "tensura-reincarnated": {
       "version": "2.0.1.4",
-      "file": "tensura-neoforge-2.0.1.4.jar",
-      "url": "https://cdn.modrinth.com/data/Br0kXPwc/versions/DfQPJq9I/tensura-neoforge-2.0.1.4.jar",
-      "sha512": "bb127c86aa8f4aa0a734979587f037b86e5fc1970b85d5d8f2976eb685f80dffb3d15bc8fdde46628ae8b5a0e90254f775637b5571821901c9a5a7dd70b5ccd1",
+      "file": "tensura-fabric-2.0.1.4.jar",
+      "url": "https://cdn.modrinth.com/data/Br0kXPwc/versions/DZ5a1IEG/tensura-fabric-2.0.1.4.jar",
+      "sha512": "fbf1ebdbd08bc87da061d1beed5d7087e7017f477db691effac11ffbe6c533a94a15b6b78525bcb32f3467f0909ecac007257976403f007578cbd6aa84afddf7",
       "side": "both",
       "requires": [
-        "geckolib",
+        "terrablender",
         "manascore",
         "smartbrainlib",
-        "terrablender"
+        "geckolib"
       ]
     },
     "geckolib": {
       "version": "4.9.3",
-      "file": "geckolib-neoforge-1.21.1-4.9.3.jar",
-      "url": "https://cdn.modrinth.com/data/8BmcQJ2H/versions/Grwn5rUB/geckolib-neoforge-1.21.1-4.9.3.jar",
-      "sha512": "8dfa5f8c57224a5e34e5098367ea9819ca6dc9c11357cd3062c16da3455c8bd1a483098af7383debc4b9ce8e4d7ab3fdc799b415644eb829da83eb72a7335dfd",
+      "file": "geckolib-fabric-1.21.1-4.9.3.jar",
+      "url": "https://cdn.modrinth.com/data/8BmcQJ2H/versions/tmxM7U4W/geckolib-fabric-1.21.1-4.9.3.jar",
+      "sha512": "e26a1c15d10cf5c1234309dbb82fb23d4783b2594b2454b16a9c964fab9e9912be66904b03eb01ebb94dada298d98de18d66f5e3f4173f771579b56e13f7da16",
       "side": "both",
       "requires": []
     },
     "smartbrainlib": {
       "version": "1.16.11",
-      "file": "SmartBrainLib-neoforge-1.21.1-1.16.11.jar",
-      "url": "https://cdn.modrinth.com/data/PuyPazRT/versions/O5EpeqI3/SmartBrainLib-neoforge-1.21.1-1.16.11.jar",
-      "sha512": "bfc76f6fd8c388d01b80601ad1b826f6b3f5ec5ea915e5725af129561e6bc4a10890975e6f6d2a0348d842c13042dcf1a9d0a1574fba76bce60119bee76e2dc2",
+      "file": "SmartBrainLib-fabric-1.21.1-1.16.11.jar",
+      "url": "https://cdn.modrinth.com/data/PuyPazRT/versions/87gX12Yj/SmartBrainLib-fabric-1.21.1-1.16.11.jar",
+      "sha512": "db0759fd67e819b0c90f513db47e17db83d03943bab0e31146400efdd9455699fd7fc1ddf01e3dcf8767e260f852ec148123e8108c8eebedeb6cd56c6a7dc74f",
       "side": "both",
       "requires": []
     },
     "manascore": {
       "version": "4.0.0.2",
-      "file": "manascore-neoforge-4.0.0.2.jar",
-      "url": "https://cdn.modrinth.com/data/wRRSWpd1/versions/yhLQMaxS/manascore-neoforge-4.0.0.2.jar",
-      "sha512": "2e9ae47175df3f4c28132cc04269405e65fc131aa405f8160cce4082e41797d47c3d8080f96d86a83b7cddb4ea390b8c688184961307b7499ba30062e7d5e7a7",
+      "file": "manascore-fabric-4.0.0.2.jar",
+      "url": "https://cdn.modrinth.com/data/wRRSWpd1/versions/SmuyLaPd/manascore-fabric-4.0.0.2.jar",
+      "sha512": "a1405447f13b8de1965a896128d155c712e930e5730da226359428b6cde1671dcfb21cfe0f4bb3ce0918ffbe3444c555c6b8117c8433201b41a7968f36121c0d",
       "side": "both",
       "requires": [
         "architectury-api"
       ]
     },
     "architectury-api": {
-      "version": "13.0.11+neoforge",
-      "file": "architectury-13.0.11-neoforge.jar",
-      "url": "https://cdn.modrinth.com/data/lhGA9TYQ/versions/1IiqEQGl/architectury-13.0.11-neoforge.jar",
-      "sha512": "d9f7c3bb8162577dfb461ffdf04bd6a3563c7586934a0e2a744c14421beffb8286f0d88d4c758317003f20f99fe8072a39b9d675af061e036970d36db36027f0",
+      "version": "13.0.11+fabric",
+      "file": "architectury-13.0.11-fabric.jar",
+      "url": "https://cdn.modrinth.com/data/lhGA9TYQ/versions/Pzc2FP5K/architectury-13.0.11-fabric.jar",
+      "sha512": "53314eb34890b11ad3c06c6f3ba2d01ae1ca756235ce4f0574e4b0544952a2ab3c628c81b521653d6487d62c5dc3055e06fed6367a3a499bafad909512f0c716",
       "side": "both",
       "requires": []
     },
     "terrablender": {
       "version": "4.1.0.8",
-      "file": "TerraBlender-neoforge-1.21.1-4.1.0.8.jar",
-      "url": "https://cdn.modrinth.com/data/kkmrDlKT/versions/6e8GCrLb/TerraBlender-neoforge-1.21.1-4.1.0.8.jar",
-      "sha512": "9d4b2a1be5139c0fb2fad92ed21805b17d9e83b6ea48e637e018bb14063c1823a206390755dbfe8d025c20fd62ac11cdd84db53ddb956dabaeda01bff57bac50",
+      "file": "TerraBlender-fabric-1.21.1-4.1.0.8.jar",
+      "url": "https://cdn.modrinth.com/data/kkmrDlKT/versions/XNtIBXyQ/TerraBlender-fabric-1.21.1-4.1.0.8.jar",
+      "sha512": "f933f0c70babe3cf1efe3b8121486f26db9d48799b6d50557ec4f7bc47e553fe00c837f4940d70aa2eab7f13f91065a9e56c0cc53f8aa2393edaf423f80997b8",
       "side": "both",
       "requires": []
-    },
-    "dragonsurvival": {
-      "version": "1.21.1-2.0.45",
-      "file": "DragonSurvival-1.21.1-v2.0.45-28.11.2025-all.jar",
-      "url": "https://github.com/DragonSurvivalTeam/DragonSurvival/releases/download/1.21.1-2.0.45/DragonSurvival-1.21.1-v2.0.45-28.11.2025-all.jar",
-      "sha512": "99d743495df229a88a77a42fe7812917e49339a24115e0ef0bc092ed0e2139dcd4df2d7a2cd66c5fdcb5b7b7beab56a1c89c474bb5228575304fdd7580c0a95c",
-      "side": "both",
-      "requires": [
-        "geckolib"
-      ]
     },
     "cobblemon": {
       "version": "1.8.2",
-      "file": "Cobblemon-neoforge-1.8.2+1.21.1.jar",
-      "url": "https://cdn.modrinth.com/data/MdwFAVRL/versions/9IXh9584/Cobblemon-neoforge-1.8.2%2B1.21.1.jar",
-      "sha512": "4803f81c95563c6950d0a287f5f16f04122c5bcce82e084fb032f992cecf3950496ac53bbecbcf2689dd87ff3c79afb1c734204e8b0268a25ee0b09d4a6228e6",
-      "side": "both",
-      "requires": [
-        "kotlin-for-forge"
-      ]
-    },
-    "kotlin-for-forge": {
-      "version": "5.12.0",
-      "file": "kotlinforforge-5.12.0-all.jar",
-      "url": "https://cdn.modrinth.com/data/ordsPcFz/versions/uhJhCT7X/kotlinforforge-5.12.0-all.jar",
-      "sha512": "b8c3942f4d33179edf3f102f3d870b99dd436f8b8236dbbd31aa51b888162c692cfd88927295f24dc8b4375232f4c6c17360c5d6c4823f93cbcd7cf4bdc8bd14",
-      "side": "both",
-      "requires": []
-    },
-    "vampirism": {
-      "version": "1.21-1.10.13",
-      "file": "Vampirism-1.21-1.10.13.jar",
-      "url": "https://cdn.modrinth.com/data/jVZ0F1wn/versions/8KCSZKt6/Vampirism-1.21-1.10.13.jar",
-      "sha512": "99351576512c366934281fdccbf33f6b54d6f6afd23bab0a026940709087b00b120c50999da791d0047544dcee6d41caf6fe73c0f4ec99699a65318fe9ec9a20",
-      "side": "both",
-      "requires": []
-    },
-    "werewolves": {
-      "version": "1.21-2.0.3.3",
-      "file": "Werewolves-1.21-2.0.3.3.jar",
-      "url": "https://cdn.modrinth.com/data/3ElBohKg/versions/zkd687ts/Werewolves-1.21-2.0.3.3.jar",
-      "sha512": "cdc0d8e9c4d8b961df63998f3200645960cc28f1e795e69f1801431bfca0c5ea89fa8e70fcca1ad10cbb37cdc5f15382d87c2a9403d6fa6a67eaabe69604b67d",
-      "side": "both",
-      "requires": [
-        "vampirism"
-      ]
-    },
-    "epic-fight": {
-      "version": "21.17.3.1-mc1.21.1-neoforge",
-      "file": "epic-fight-21.17.3.1-mc1.21.1-neoforge.jar",
-      "url": "https://cdn.modrinth.com/data/vu3NZ5Ma/versions/8HHhJt6i/epic-fight-21.17.3.1-mc1.21.1-neoforge.jar",
-      "sha512": "d39c1d4a2198e7f2080cdc98de890d26d658a02b44c8399a301c7c0005d9991ff97cc94881823a9daa8952f3b89eb3d9197c2f83cf0fbba9c7992c77921b2122",
+      "file": "Cobblemon-fabric-1.8.2+1.21.1.jar",
+      "url": "https://cdn.modrinth.com/data/MdwFAVRL/versions/GJ2a1b8O/Cobblemon-fabric-1.8.2%2B1.21.1.jar",
+      "sha512": "fe0090aa00a010a2353b4da43693ef70b675d5255756541cd679d2cf1df077ffedb790e9de66b1bd69cc9f6336d58763aeb15f146d07420d466daaeb3d992386",
       "side": "both",
       "requires": []
     },
     "simple-voice-chat": {
-      "version": "neoforge-1.21.1-2.6.25",
-      "file": "voicechat-neoforge-1.21.1-2.6.25.jar",
-      "url": "https://cdn.modrinth.com/data/9eGKb6K1/versions/KDRDUnk4/voicechat-neoforge-1.21.1-2.6.25.jar",
-      "sha512": "28c735ea34eacdbdd2d8de79ed784b8877b101801149ff47d03ee8e4b3cf70429c33edf6a35181e4ada596b521e0d0bd1b83f6dd281f5ca84dfcfa61cbbe967a",
+      "version": "fabric-1.21.1-2.6.24",
+      "file": "voicechat-fabric-1.21.1-2.6.24.jar",
+      "url": "https://cdn.modrinth.com/data/9eGKb6K1/versions/6PKCVne5/voicechat-fabric-1.21.1-2.6.24.jar",
+      "sha512": "a708962875ef3beafe4eeeea0d7984c1d810fce23544e1615f51d0f5900e2d65633056bf62b793bc9486ea0ef117d34b18d5cac461870e35677c51c979519eda",
       "side": "both",
-      "requires": []
+      "requires": [],
+      "_comment": "2.6.24: la \u00faltima hecha con un Loom no m\u00e1s nuevo que el del arn\u00e9s (2.6.25 usa Loom 1.19, que necesita Java 25 para Gradle)"
     },
     "aether": {
-      "version": "1.21.1-1.5.10-neoforge",
-      "file": "aether-1.21.1-1.5.10-neoforge.jar",
-      "url": "https://cdn.modrinth.com/data/YhmgMVyu/versions/K5X5qMwG/aether-1.21.1-1.5.10-neoforge.jar",
-      "sha512": "4b004daed6d09362646e204f068dee28e80523e705e862778036c492775672071ca9cc95f9574a842f34d2e058b46138c6154c6a2f251dcdad7a8803907dad46",
+      "version": "1.21.1-1.5.10-fabric",
+      "file": "aether-1.21.1-1.5.10-fabric.jar",
+      "url": "https://cdn.modrinth.com/data/YhmgMVyu/versions/kETmh8mQ/aether-1.21.1-1.5.10-fabric.jar",
+      "sha512": "6878283353aa9fb6d6ab04671e0228de82c113e1287689d499456f33220e8feadd1f19d4bfb6070994c3bb1ab0bd06fcb51b3c77644a9889f61c44a5a9ba8daf",
       "side": "both",
       "requires": [
         "owo-lib"
-      ],
-      "clientPatch": {
-        "nested": "META-INF/jarjar/accessories-neoforge-1.1.0-beta.48+1.21.1.jar",
-        "mixinConfig": "accessories-common.mixins.json",
-        "removeMixins": [
-          "client.model.EntityRenderersMixin"
-        ]
-      }
-    },
-    "owo-lib": {
-      "version": "0.12.15.6-beta.1+1.21",
-      "file": "owo-lib-neoforge-0.12.15.6-beta.1+1.21.jar",
-      "url": "https://cdn.modrinth.com/data/ccKDOlHs/versions/wbdHEItB/owo-lib-neoforge-0.12.15.6-beta.1%2B1.21.jar",
-      "sha512": "fc843ef350c4af6748d9fd6ecd3c28f96262cf46d46a8329029f49ea4f9eb87238113a8a415e8bba2c4f346c718bf450194f6f5823dfbf1ae7312529a81c3e5c",
-      "side": "both",
-      "requires": []
-    },
-    "skyblock-builder": {
-      "version": "21.1.37",
-      "file": "SkyblockBuilder-21.1.37.jar",
-      "url": "https://cdn.modrinth.com/data/por2AZc5/versions/NmXF6maO/SkyblockBuilder-21.1.37.jar",
-      "sha512": "267af0122bc0151bb4c00259fe776d8d46d8b2f16e94298b4fdd4adc6249e7efbf4e28399f7de692156e03ea5e9aeef62cc2f90ef0f9f255201fde4125c2d41b",
-      "side": "both",
-      "requires": [
-        "libx"
       ]
     },
-    "libx": {
-      "version": "1.21.1-6.0.15",
-      "file": "LibX-1.21.1-6.0.15.jar",
-      "url": "https://cdn.modrinth.com/data/qEH6GYul/versions/ADxNEmse/LibX-1.21.1-6.0.15.jar",
-      "sha512": "944dd7834cfb88b15de9527c302dc7206d7e8b1e449d97cc605fb6e7225619c68d05ea5ba934f1d1da1bf5ff2a7e79bb990870e886293dc336deeea537e07382",
+    "owo-lib": {
+      "version": "0.12.15.4+1.21",
+      "file": "owo-lib-0.12.15.4+1.21.jar",
+      "url": "https://cdn.modrinth.com/data/ccKDOlHs/versions/JB1fLQnc/owo-lib-0.12.15.4%2B1.21.jar",
+      "sha512": "b9c79035c912ef043722f2a1f0bc0166e0ca047ea5237a86f23198dea487289e0a0f92a96e46bd683ffc39e4190b95450d13456b14f6280587635b51c9393a1b",
       "side": "both",
-      "requires": []
-    },
-    "infiniverse": {
-      "version": "2.0.1.0",
-      "file": "infiniverse-1.21-2.0.1.0.jar",
-      "url": "https://maven.commoble.net/net/commoble/infiniverse/infiniverse-1.21/2.0.1.0/infiniverse-1.21-2.0.1.0.jar",
-      "sha512": "01709344bfec8a1a78cd85bec3f770dfe8e06a78f7aaedf4177beb4e9a59f08693f1558e7fa9565503c19768f971d4ab653e2062cf2c55220d3d5e23aad604cf",
-      "side": "server",
       "requires": []
     },
     "welcome-screen": {
       "version": "1.0.0",
-      "file": "welcomescreen-neoforge-1.0.0-1.21.1.jar",
-      "url": "https://cdn.modrinth.com/data/EzQkPElf/versions/Jy1AfUlC/welcomescreen-neoforge-1.0.0-1.21.1.jar",
-      "sha512": "c1cdc5fe5f361c923ae91a2eecfe59a720a8d6c99a5e6bb5366423aa77c82a41a39e951a92a049a8a12a995d3ddd21e2a96e64ee688f8e35f7dcec8521fc131a",
+      "file": "welcomescreen-fabric-1.0.0-1.21.1.jar",
+      "url": "https://cdn.modrinth.com/data/EzQkPElf/versions/kcaoltFt/welcomescreen-fabric-1.0.0-1.21.1.jar",
+      "sha512": "202835c16da47973ffba696e9d32c57ccb988da0b931009b58a1241a60766f2e5c3db217bde8ea42e2f8a54607d1fc6bc0510f2d8637f6b299c63bb0c071bcaa",
       "side": "client",
       "requires": [
         "fancymenu",
@@ -205,10 +119,10 @@
       ]
     },
     "fancymenu": {
-      "version": "3.9.14-1.21.1-neoforge",
-      "file": "fancymenu_neoforge_3.9.14_MC_1.21.1.jar",
-      "url": "https://cdn.modrinth.com/data/Wq5SjeWM/versions/P9dDosz2/fancymenu_neoforge_3.9.14_MC_1.21.1.jar",
-      "sha512": "57ea23ab4424217770025a9447f3990fa39befdb51ac99d7e6bcde4bf7d926b125ceed824f38e7cf504e389bc0d30edb3a7592b47d4763516c9cb0ef4ab2a9c3",
+      "version": "3.9.14-1.21.1-fabric",
+      "file": "fancymenu_fabric_3.9.14_MC_1.21.1.jar",
+      "url": "https://cdn.modrinth.com/data/Wq5SjeWM/versions/iGLyAyEZ/fancymenu_fabric_3.9.14_MC_1.21.1.jar",
+      "sha512": "c730134bb63644e6f8a3dcdfe156215eb1664c436bffab3cc024e8ad44f613829ab774f2709c345af3e138609573bc068254f176630ce69a057d2e172dadb3e9",
       "side": "client",
       "requires": [
         "konkrete",
@@ -216,26 +130,26 @@
       ]
     },
     "melody": {
-      "version": "1.0.10-1.21-neoforge",
-      "file": "melody_neoforge_1.0.10_MC_1.21.jar",
-      "url": "https://cdn.modrinth.com/data/CVT4pFB2/versions/efcdRVZP/melody_neoforge_1.0.10_MC_1.21.jar",
-      "sha512": "3bd96b851a65fa95d92d051851e6a7a415927f718fcb05f0dfb5983eb3ca54edfb842ea85f1497e1b3510b5884181b8f9c6080d2b15642ceadac695011c00ec1",
+      "version": "1.0.10-1.21-fabric",
+      "file": "melody_fabric_1.0.10_MC_1.21.jar",
+      "url": "https://cdn.modrinth.com/data/CVT4pFB2/versions/OqxSeb4n/melody_fabric_1.0.10_MC_1.21.jar",
+      "sha512": "a7e13e66d3d406b26ee7e5394ae84653d1b9a4f1e4151a2f925fb07869576d6a3b419ba5702bd1ff5bad91054a66f5071720e17f85e1579e8e4f83664bc3dc5e",
       "side": "client",
       "requires": []
     },
     "konkrete": {
-      "version": "1.9.9-1.21-neoforge",
-      "file": "konkrete_neoforge_1.9.9_MC_1.21.jar",
-      "url": "https://cdn.modrinth.com/data/J81TRJWm/versions/stJDU839/konkrete_neoforge_1.9.9_MC_1.21.jar",
-      "sha512": "378bd12e3c32329abbae5cd514e1d1cc2a3cc3a45979fedb1d4e4c0a6732bdcf4b7d1bf7f7a112074bf288957edf86152c9c090a27d1d5de84a9a7825d3d6511",
+      "version": "1.9.9-1.21-fabric",
+      "file": "konkrete_fabric_1.9.9_MC_1.21.jar",
+      "url": "https://cdn.modrinth.com/data/J81TRJWm/versions/Qvrc7DuG/konkrete_fabric_1.9.9_MC_1.21.jar",
+      "sha512": "6d4c65a0a9d51b2b956ba61f926f642e901573c9621289cf7a387996370fcab23c69ee6e698596965e9bd68b86b1e96e44295172a880a979105347719228ecf8",
       "side": "client",
       "requires": []
     },
     "necronomicon": {
       "version": "1.6.0+1.21",
-      "file": "Necronomicon-NeoForge-1.6.0+1.21.jar",
-      "url": "https://cdn.modrinth.com/data/P1Kv5EAO/versions/4iO8Tbfj/Necronomicon-NeoForge-1.6.0%2B1.21.jar",
-      "sha512": "fc564e55e8cc2050261db9540afbdbab9ebf6559c1c5cae58ab4a3d4d1b7f1b0842459e5ea1bc780e03fed620a0a2af6bbe1eace037d6a1411ae853dc5e77dae",
+      "file": "Necronomicon-Fabric-1.6.0+1.21.jar",
+      "url": "https://cdn.modrinth.com/data/P1Kv5EAO/versions/O6odCETu/Necronomicon-Fabric-1.6.0%2B1.21.jar",
+      "sha512": "0deeb7ed7914994bf274547d7c665be460a27a2526adc00f3708b257bab8b51204dc6c8b3b2259440c57b3ebfeaa3d8ca9e9c4308f0265a041233dbeb5eae2af",
       "side": "client",
       "requires": []
     },
@@ -258,10 +172,10 @@
       "requires": []
     },
     "female-gender": {
-      "version": "3.2.2",
-      "file": "Female-Gender-Mod-neoforge-1.21-3.2.2.jar",
-      "url": "https://cdn.modrinth.com/data/bcOsQHnC/versions/kKffHCGl/Female-Gender-Mod-neoforge-1.21-3.2.2.jar",
-      "sha512": "99a56830fcb47d7a2f74f4985069e4af0bf1cd8907ccf4c3d2cb593c903a87eeb7fa70dc47e3943b6b320bd97a3530d77d54e4c85ef63462dc838cc735a3097f",
+      "version": "3.2.1+1.21",
+      "file": "Female-Gender-Mod-fabric-3.2.1+1.21.jar",
+      "url": "https://cdn.modrinth.com/data/bcOsQHnC/versions/kJmjQvAS/Female-Gender-Mod-fabric-3.2.1%2B1.21.jar",
+      "sha512": "40a2399d8704cfb1ac3195579fad748d312da99c2fd886b148b035624d57e65af03e0009f84cfc669f514c5d9c13985270105a912893918b1e5a5a881c2e3b5f",
       "side": "both",
       "requires": []
     }
@@ -270,9 +184,9 @@
     "baseline": {
       "mods": []
     },
-    "neo-origins": {
+    "origins": {
       "mods": [
-        "neo-origins"
+        "origins"
       ]
     },
     "mca": {
@@ -280,42 +194,17 @@
         "minecraft-comes-alive-reborn"
       ]
     },
-    "pixelmon": {
-      "mods": [
-        "pixelmon"
-      ],
-      "serverMemory": "3G",
-      "clientMemory": "3G"
-    },
     "tensura": {
       "mods": [
         "tensura-reincarnated"
       ]
     },
-    "dragon-survival": {
-      "mods": [
-        "dragonsurvival"
-      ]
-    },
     "cobblemon": {
       "mods": [
         "cobblemon"
-      ]
-    },
-    "vampirism": {
-      "mods": [
-        "vampirism"
-      ]
-    },
-    "werewolves": {
-      "mods": [
-        "werewolves"
-      ]
-    },
-    "epic-fight": {
-      "mods": [
-        "epic-fight"
-      ]
+      ],
+      "serverMemory": "3G",
+      "clientMemory": "3G"
     },
     "voicechat": {
       "mods": [
@@ -329,38 +218,11 @@
       "serverFiles": {
         "defaultconfigs/aether-server.toml": "[Modpack]\n\t\"Spawns the player in the Aether\" = true\n"
       },
-      "_comment": "Mundo normal: Aether busca el punto de aparici\u00f3n inicial a la altura que el jugador tiene en el Overworld, y en el mundo plano (y=-60) cae por debajo del Aether y vuelve al Overworld, con o sin DirectAuth. El cliente usa una copia de Aether sin el mixin EntityRenderersMixin de Accessories (clientPatch en la mod): apunta a una lambda de Minecraft por su nombre sint\u00e9tico, que en el Minecraft recompilado del entorno de desarrollo es otro. No afecta a lo que se prueba.",
+      "_comment": "Mundo normal: Aether busca el punto de aparici\u00f3n inicial a la altura que el jugador tiene en el Overworld, y en el mundo plano (y=-60) cae por debajo del Aether y vuelve al Overworld, con o sin DirectAuth.",
       "serverProperties": {
         "level-type": "minecraft\\:normal",
         "level-seed": "directauth"
       }
-    },
-    "skyblock-builder": {
-      "mods": [
-        "skyblock-builder"
-      ],
-      "serverProperties": {
-        "level-type": "skyblockbuilder\\:skyblock"
-      }
-    },
-    "skyblock-builder-infiniverse": {
-      "mods": [
-        "skyblock-builder",
-        "infiniverse"
-      ],
-      "serverProperties": {
-        "level-type": "skyblockbuilder\\:skyblock"
-      },
-      "firstBoot": [
-        {
-          "replace": "config/skyblockbuilder/world.json5",
-          "from": "(\"DimensionPerTeam\": \\{[\\s\\S]*?\"enabled\": )false",
-          "to": "$1true"
-        },
-        {
-          "delete": "world"
-        }
-      ]
     },
     "welcome-screen": {
       "mods": [

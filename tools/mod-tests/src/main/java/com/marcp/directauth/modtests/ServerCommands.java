@@ -1,14 +1,12 @@
 package com.marcp.directauth.modtests;
 
 import com.marcp.directauth.modtests.checks.CobblemonChecks;
-import com.marcp.directauth.modtests.checks.DragonSurvivalChecks;
-import com.marcp.directauth.modtests.checks.EpicFightChecks;
 import com.marcp.directauth.modtests.checks.FemaleGenderChecks;
 import com.marcp.directauth.modtests.checks.McaChecks;
-import com.marcp.directauth.modtests.checks.PixelmonChecks;
+import com.marcp.directauth.modtests.checks.OriginsChecks;
 import com.marcp.directauth.modtests.checks.TensuraChecks;
 import com.marcp.directauth.modtests.checks.VoiceChatChecks;
-import com.marcp.directauth.modtests.checks.WerewolvesChecks;
+import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import net.minecraft.commands.CommandSourceStack;
@@ -19,8 +17,7 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.stats.Stats;
-import net.neoforged.fml.ModList;
-import net.neoforged.neoforge.event.RegisterCommandsEvent;
+import net.fabricmc.loader.api.FabricLoader;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -35,17 +32,14 @@ final class ServerCommands {
     private ServerCommands() {
     }
 
-    static void register(RegisterCommandsEvent event) {
+    static void register(CommandDispatcher<CommandSourceStack> dispatcher) {
         Map<String, Function<ServerPlayer, String>> checks = new LinkedHashMap<>();
-        if (ModList.get().isLoaded("mca")) McaChecks.add(checks);
-        if (ModList.get().isLoaded("pixelmon")) PixelmonChecks.add(checks);
-        if (ModList.get().isLoaded("tensura")) TensuraChecks.add(checks);
-        if (ModList.get().isLoaded("cobblemon")) CobblemonChecks.add(checks);
-        if (ModList.get().isLoaded("dragonsurvival")) DragonSurvivalChecks.add(checks);
-        if (ModList.get().isLoaded("werewolves")) WerewolvesChecks.add(checks);
-        if (ModList.get().isLoaded("epicfight")) EpicFightChecks.add(checks);
-        if (ModList.get().isLoaded("voicechat")) VoiceChatChecks.add(checks);
-        if (ModList.get().isLoaded("wildfire_gender")) FemaleGenderChecks.add(checks);
+        if (loaded("origins")) OriginsChecks.add(checks);
+        if (loaded("mca")) McaChecks.add(checks);
+        if (loaded("tensura")) TensuraChecks.add(checks);
+        if (loaded("cobblemon")) CobblemonChecks.add(checks);
+        if (loaded("voicechat")) VoiceChatChecks.add(checks);
+        if (loaded("wildfire_gender")) FemaleGenderChecks.add(checks);
 
         LiteralArgumentBuilder<CommandSourceStack> root = Commands.literal("mt")
             .requires(source -> source.hasPermission(2))
@@ -70,7 +64,11 @@ final class ServerCommands {
                             + ": " + check.getValue().apply(player));
                     })));
         }
-        event.getDispatcher().register(root);
+        dispatcher.register(root);
+    }
+
+    private static boolean loaded(String modId) {
+        return FabricLoader.getInstance().isModLoaded(modId);
     }
 
     private static int reply(CommandSourceStack source, String text) {

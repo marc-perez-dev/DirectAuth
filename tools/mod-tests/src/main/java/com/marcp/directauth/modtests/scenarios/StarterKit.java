@@ -1,8 +1,8 @@
 package com.marcp.directauth.modtests.scenarios;
 
 import com.marcp.directauth.modtests.ClientDriver;
-import com.natamus.collective_common_neoforge.implementations.networking.api.Dispatcher;
-import com.serilum.starterkit_common_neoforge.networking.packets.ToServerSendKitChoicePacket;
+import com.natamus.collective_common_fabric.implementations.networking.api.Dispatcher;
+import com.serilum.starterkit_common_fabric.networking.packets.ToServerSendKitChoicePacket;
 
 /**
  * Starter Kit con varios kits para elegir: al aparecer por primera vez, el servidor pregunta al
@@ -10,11 +10,15 @@ import com.serilum.starterkit_common_neoforge.networking.packets.ToServerSendKit
  * y si no, le da a elegir por comandos de chat.
  */
 public class StarterKit implements Scenario {
-    private static final String SCREEN = "com.serilum.starterkit_common_neoforge.inventory.";
+    private static final String SCREEN = "com.serilum.starterkit_common_fabric.inventory.";
 
     @Override
     public void run(ClientDriver d) throws Exception {
+        int start = d.chatPosition();
         Scenario.registerNewChecking(d, "kit choice screen", SCREEN);
+        // Si la respuesta "tengo la mod" no llega en 5 s, Starter Kit da a elegir por comandos de chat
+        d.check("no fallback to choosing the kit by chat commands", d.chatFrom(start).stream().noneMatch(m -> m.contains("/sk choose")),
+            "chat: " + d.chatFrom(start));
         // El dueño se va sin elegir kit
         Scenario.logout(d);
 

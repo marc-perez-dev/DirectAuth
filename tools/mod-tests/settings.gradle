@@ -1,6 +1,18 @@
 pluginManagement {
     repositories {
+        maven {
+            name = 'Fabric'
+            url = 'https://maven.fabricmc.net/'
+        }
+        mavenCentral()
         gradlePluginPortal()
+    }
+    // La misma versión de Loom que DirectAuth (gradle.properties de la raíz). Loom no remapea una
+    // mod hecha con un Loom más nuevo que él: mods.json fija versiones que cumplen esto
+    def root = new Properties()
+    file('../../gradle.properties').withInputStream { root.load(it) }
+    plugins {
+        id 'net.fabricmc.fabric-loom-remap' version root.getProperty('loom_version')
     }
 }
 

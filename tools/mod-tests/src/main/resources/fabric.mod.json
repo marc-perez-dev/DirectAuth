@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "id": "directauth_modtests",
+  "version": "${version}",
+  "name": "DirectAuth mod tests",
+  "description": "Harness of DirectAuth's tests with real mods (tools/mod-tests): drives the client and adds /mt to the server.",
+  "license": "MIT",
+  "environment": "*",
+  "entrypoints": {
+    "main": ["com.marcp.directauth.modtests.ModTests"],
+    "client": ["com.marcp.directauth.modtests.ModTestsClient"]
+  },
+  "depends": {
+    "fabricloader": "*",
+    "fabric-api": "*",
+    "minecraft": "1.21.1"
+  }
+}

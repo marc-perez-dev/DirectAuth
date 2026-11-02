@@ -1,47 +1,51 @@
 #!/usr/bin/env node
-// Pruebas con mods reales: arranca un servidor de desarrollo con DirectAuth y las mods de un
-// escenario, y un cliente NeoForge real (sin pantalla, con Xvfb) que ejecuta el escenario.
+// Pruebas con mods reales: arranca un servidor Fabric 1.21.1 de producción con DirectAuth y las mods
+// de un escenario, y un cliente Fabric real (de producción, sin pantalla, con Xvfb) que ejecuta el
+// escenario.
 // Uso: node run.js [escenario...] (sin argumentos: todos los de mods.json). Ver README.md.
 'use strict'
 const fs = require('fs')
 const path = require('path')
 const net = require('net')
+const zlib = require('zlib')
 const crypto = require('crypto')
 const { spawn, execFileSync } = require('child_process')
 
 const HERE = __dirname
 const REPO = path.resolve(HERE, '../..')
-const RUNS = path.join(REPO, 'runs/mod-tests')
+// Directorio propio: runs/mod-tests es el de las ramas de NeoForge y Forge
+const RUNS = path.join(REPO, 'runs/mod-tests-fabric')
 const CACHE = path.join(HERE, 'build/mod-cache')
-const MODDEV = path.join(HERE, 'build/moddev')
+const FABRIC_CACHE = path.join(HERE, 'build/fabric-cache')
 const MANIFEST = JSON.parse(fs.readFileSync(path.join(HERE, 'mods.json'), 'utf8'))
+// Minecraft, Fabric Loader y Fabric API: los de DirectAuth (gradle.properties de la raíz)
+const PROPS = Object.fromEntries(fs.readFileSync(path.join(REPO, 'gradle.properties'), 'utf8').split('\n')
+  .map((l) => l.match(/^([\w.]+)=(.*)$/)).filter(Boolean).map((m) => [m[1], m[2].trim()]))
+const MC = PROPS.minecraft_version
+const LOADER = PROPS.loader_version
+const FABRIC_API = PROPS.fabric_api_version
+const SERVER_LAUNCHER_VERSION = '1.1.2'
+// Instalaciones compartidas por los escenarios: el lanzador de servidor de Fabric con el servidor
+// vanilla y sus librerías, y un cliente como el de un launcher (librerías, assets)
+const SERVER_HOME = path.join(RUNS, '_server')
+const SERVER_LAUNCHER = `fabric-server-mc.${MC}-loader.${LOADER}-launcher.${SERVER_LAUNCHER_VERSION}.jar`
+const CLIENT_HOME = path.join(RUNS, '_client')
+const FABRIC_PROFILE = `fabric-loader-${LOADER}-${MC}`
 const SERVER_PORT = 25570
 const RCON_PORT = 25580
 const RCON_PASSWORD = 'modtests'
 const USERNAME = 'ModTester'
+// El arnés remapeado a intermediary (con los comandos /mt) para el servidor y el cliente de producción
+const HARNESS_JAR = path.join(HERE, 'build/libs/directauth_modtests-1.0.0.jar')
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 const log = (...a) => console.log(...a)
+const readJson = (file) => JSON.parse(fs.readFileSync(file, 'utf8'))
 
-// ---------- Mods ----------
+// ---------- Descargas ----------
 
-const verified = new Set()
-async function download (mod) {
-  const file = path.join(CACHE, mod.file)
-  if (verified.has(file)) return file
-  if (fs.existsSync(file) && sha512(file) === mod.sha512) { verified.add(file); return file }
-  fs.mkdirSync(CACHE, { recursive: true })
-  log(`  downloading ${mod.file}`)
-  const res = await fetch(mod.url)
-  if (!res.ok) throw new Error(`${mod.url}: HTTP ${res.status}`)
-  fs.writeFileSync(file + '.part', Buffer.from(await res.arrayBuffer()))
-  if (sha512(file + '.part') !== mod.sha512) throw new Error(`${mod.file}: checksum mismatch`)
-  fs.renameSync(file + '.part', file)
-  verified.add(file)
-  return file
-}
-function sha512 (file) {
-  const hash = crypto.createHash('sha512')
+function hashFile (algorithm, file) {
+  const hash = crypto.createHash(algorithm)
   const fd = fs.openSync(file, 'r')
   const buf = Buffer.alloc(1 << 20)
   try {
@@ -52,19 +56,130 @@ function sha512 (file) {
   return hash.digest('hex')
 }
 
-/**
- * Todas las mods del manifiesto: también las usa la compilación del arnés (solo para compilar).
- * Sus librerías jar-in-jar (Kotlin, módulos de ManasCore...) se extraen en build/mod-cache/nested.
- */
-async function fetchAll () {
-  const nested = path.join(CACHE, 'nested')
-  fs.mkdirSync(nested, { recursive: true })
-  for (const mod of Object.values(MANIFEST.mods)) {
-    const file = await download(mod)
-    for (const dir of ['META-INF/jarjar/*.jar', 'META-INF/jars/*.jar']) {
-      try { execFileSync('unzip', ['-o', '-q', '-j', file, dir, '-d', nested], { stdio: 'ignore' }) } catch {} // sin anidados
+/** Descarga un fichero si falta o no cuadra su hash ({sha1} o {sha512}, si se conoce). */
+async function fetchFile (url, file, expected = {}) {
+  const [algorithm, hash] = Object.entries(expected).find(([, v]) => v) || []
+  if (fs.existsSync(file) && (!algorithm || hashFile(algorithm, file) === hash)) return file
+  fs.mkdirSync(path.dirname(file), { recursive: true })
+  // Unos pocos reintentos: los miles de assets del cliente se descargan de uno en uno
+  for (let attempt = 1; ; attempt++) {
+    try {
+      const res = await fetch(url, { headers: { 'User-Agent': 'marcp/DirectAuth-modtests' } })
+      if (!res.ok) throw new Error(`${url}: HTTP ${res.status}`)
+      fs.writeFileSync(file + '.part', Buffer.from(await res.arrayBuffer()))
+      break
+    } catch (e) {
+      if (attempt >= 4) throw e
+      await sleep(2000 * attempt)
     }
   }
+  if (algorithm && hashFile(algorithm, file + '.part') !== hash) throw new Error(`${url}: checksum mismatch`)
+  fs.renameSync(file + '.part', file)
+  return file
+}
+
+const verified = new Set()
+async function download (mod) {
+  const file = path.join(CACHE, mod.file)
+  if (verified.has(file)) return file
+  if (!fs.existsSync(file) || hashFile('sha512', file) !== mod.sha512) log(`  downloading ${mod.file}`)
+  await fetchFile(mod.url, file, { sha512: mod.sha512 })
+  verified.add(file)
+  return file
+}
+
+/** Fabric API (la versión de DirectAuth), comprobada con el sha1 que publica su maven. */
+async function fabricApi () {
+  const v = encodeURIComponent(FABRIC_API)
+  const url = `https://maven.fabricmc.net/net/fabricmc/fabric-api/fabric-api/${v}/fabric-api-${v}.jar`
+  const file = path.join(FABRIC_CACHE, `fabric-api-${FABRIC_API}.jar`)
+  if (fs.existsSync(file)) return file
+  const res = await fetch(url + '.sha1')
+  if (!res.ok) throw new Error(`${url}.sha1: HTTP ${res.status}`)
+  return fetchFile(url, file, { sha1: (await res.text()).trim().split(/\s/)[0] })
+}
+
+// ---------- Jars (zip) ----------
+
+/** Entradas de un zip (directorio central), sin descomprimir: [{ name, read() }]. */
+function zipEntries (buf) {
+  let eocd = buf.length - 22
+  while (eocd >= 0 && buf.readUInt32LE(eocd) !== 0x06054b50) eocd--
+  if (eocd < 0) throw new Error('not a zip file')
+  const count = buf.readUInt16LE(eocd + 10)
+  let p = buf.readUInt32LE(eocd + 16)
+  if (count === 0xffff || p === 0xffffffff) throw new Error('zip64 jars are not supported')
+  const entries = []
+  for (let i = 0; i < count; i++) {
+    const method = buf.readUInt16LE(p + 10)
+    const size = buf.readUInt32LE(p + 20)
+    const nameLen = buf.readUInt16LE(p + 28)
+    const extraLen = buf.readUInt16LE(p + 30)
+    const commentLen = buf.readUInt16LE(p + 32)
+    const local = buf.readUInt32LE(p + 42)
+    const name = buf.toString('utf8', p + 46, p + 46 + nameLen)
+    entries.push({
+      name,
+      read () {
+        const start = local + 30 + buf.readUInt16LE(local + 26) + buf.readUInt16LE(local + 28)
+        const data = buf.subarray(start, start + size)
+        if (method === 0) return data
+        if (method === 8) return zlib.inflateRawSync(data)
+        throw new Error(`${name}: unsupported zip method ${method}`)
+      }
+    })
+    p += 46 + nameLen + extraLen + commentLen
+  }
+  return entries
+}
+
+/** fabric.mod.json de un jar (null si no es una mod de Fabric). */
+function fabricModJson (entries) {
+  const entry = entries.find((e) => e.name === 'fabric.mod.json')
+  if (!entry) return null
+  // Algunas mods llevan saltos de línea dentro de las cadenas (descripciones)
+  return JSON.parse(entry.read().toString('utf8').replace(/[\r\n\t]+/g, ' '))
+}
+
+/**
+ * Jars anidados (jar-in-jar) de una mod, recursivamente: las mods van a nested/ (Loom las remapea
+ * para compilar el arnés) y las librerías normales (Kotlin...) a nested-libs/. Los módulos de Fabric
+ * API se saltan: el arnés compila contra la Fabric API de DirectAuth.
+ */
+function extractNested (buf, nested, nestedLibs) {
+  const entries = zipEntries(buf)
+  for (const jar of fabricModJson(entries)?.jars || []) {
+    const entry = entries.find((e) => e.name === jar.file)
+    if (!entry) continue
+    const data = entry.read()
+    const meta = fabricModJson(zipEntries(data))
+    if (meta && ((/^fabric-/.test(meta.id) && meta.id !== 'fabric-language-kotlin') || meta.id === 'mixinextras')) continue
+    // Loom da a las librerías que anida un fabric.mod.json generado: no son mods, no se remapean
+    const isMod = meta && !meta.custom?.['fabric-loom:generated']
+    fs.writeFileSync(path.join(isMod ? nested : nestedLibs, path.basename(jar.file)), data)
+    extractNested(data, nested, nestedLibs)
+  }
+}
+
+/** Todas las mods del manifiesto: también las usa la compilación del arnés (solo para compilar). */
+async function fetchAll () {
+  const nested = path.join(CACHE, 'nested')
+  const nestedLibs = path.join(CACHE, 'nested-libs')
+  for (const d of [nested, nestedLibs]) fs.mkdirSync(d, { recursive: true })
+  const stamp = path.join(CACHE, 'nested.stamp')
+  const expected = Object.values(MANIFEST.mods).map((m) => m.sha512).sort().join('\n')
+  for (const mod of Object.values(MANIFEST.mods)) await download(mod)
+  if (fs.existsSync(stamp) && fs.readFileSync(stamp, 'utf8') === expected) return
+  for (const d of [nested, nestedLibs]) {
+    fs.rmSync(d, { recursive: true, force: true })
+    fs.mkdirSync(d, { recursive: true })
+  }
+  // Solo las mods del manifiesto: un jar de una versión anterior que siga en la caché no se compila
+  for (const f of fs.readdirSync(CACHE)) {
+    if (f.endsWith('.jar') && !Object.values(MANIFEST.mods).some((m) => m.file === f)) fs.rmSync(path.join(CACHE, f))
+  }
+  for (const mod of Object.values(MANIFEST.mods)) extractNested(fs.readFileSync(path.join(CACHE, mod.file)), nested, nestedLibs)
+  fs.writeFileSync(stamp, expected)
 }
 
 function modsOf (scenario) {
@@ -83,37 +198,156 @@ function modsOf (scenario) {
 // ---------- Build ----------
 
 function gradle (args, project = REPO) {
-  execFileSync('bash', [path.join(REPO, 'gradlew'), '-q', '-p', project, ...args], { cwd: REPO, stdio: 'inherit' })
+  execFileSync('bash', [path.join(REPO, 'gradlew'), '-q', '--no-daemon', '-p', project, '-Dorg.gradle.jvmargs=-Xmx2G', ...args],
+    { cwd: REPO, stdio: 'inherit' })
+}
+
+/** Java 21, el de Minecraft 1.21.1: JAVA21 o el java del PATH. */
+function java21 () {
+  return process.env.JAVA21 || 'java'
 }
 
 /** Los servidores de prueba necesitan la EULA de Minecraft aceptada (la misma que el smoke test). */
 function eulaAccepted () {
-  return [path.join(RUNS, 'eula.txt'), path.join(REPO, 'runs/smoke-test/eula.txt')]
+  return [path.join(RUNS, 'eula.txt'), path.join(REPO, 'runs/smoke-test-fabric/eula.txt')]
     .some((f) => fs.existsSync(f) && /^eula=true/m.test(fs.readFileSync(f, 'utf8')))
 }
 
 function directAuthJar () {
   if (process.env.DIRECTAUTH_JAR) return path.resolve(process.env.DIRECTAUTH_JAR)
-  const libs = path.join(REPO, 'build/libs')
-  const jars = fs.readdirSync(libs).filter((f) => /^directauth-neoforge-.*\.jar$/.test(f) && !/sources|javadoc/.test(f))
-    .map((f) => path.join(libs, f)).sort((a, b) => fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs)
-  if (!jars.length) throw new Error('DirectAuth jar not found in build/libs')
-  return jars[0]
+  const file = path.join(REPO, 'build/libs', `directauth-fabric-${MC}-${PROPS.mod_version}.jar`)
+  if (!fs.existsSync(file)) throw new Error(`DirectAuth jar not found: ${file}`)
+  return file
 }
 
-/** Comando java de un script de ModDevGradle (runClient.sh / runServer.sh), como lista de argumentos. */
-function launchCommand (script) {
-  const text = fs.readFileSync(path.join(MODDEV, script), 'utf8')
-  const exec = text.slice(text.indexOf('exec ') + 5)
-  const args = [...exec.matchAll(/'([^']*)'/g)].map((m) => m[1])
-  const main = args.indexOf('net.neoforged.devlaunch.Main')
-  if (!args[0].endsWith('/bin/java') || main < 0) throw new Error(`unexpected format in ${script}`)
-  return { java: args[0], jvm: args.slice(1, main), main: args.slice(main) }
+// ---------- Instalación de Fabric ----------
+
+/** Reglas de las librerías y argumentos de una versión: solo Linux, sin características opcionales. */
+function allowed (rules) {
+  if (!rules) return true
+  let ok = false
+  for (const rule of rules) {
+    const os = !rule.os || ((!rule.os.name || rule.os.name === 'linux') && (!rule.os.arch || rule.os.arch === 'x86_64'))
+    if (os && !rule.features) ok = rule.action === 'allow'
+  }
+  return ok
+}
+
+/** Ruta de una librería maven (grupo:artefacto:versión[:clasificador]). */
+function mavenPath (name) {
+  const [group, artifact, version, classifier] = name.split(':')
+  return `${group.replace(/\./g, '/')}/${artifact}/${version}/${artifact}-${version}${classifier ? '-' + classifier : ''}.jar`
+}
+
+/**
+ * Servidor: el lanzador de servidor de Fabric (el mismo que usa el smoke test). Descarga el servidor
+ * vanilla y las librerías de Fabric Loader en el primer arranque; cada escenario enlaza las de la
+ * instalación compartida (ver prepareDirs).
+ */
+async function installServer () {
+  await fetchFile(`https://meta.fabricmc.net/v2/versions/loader/${MC}/${LOADER}/${SERVER_LAUNCHER_VERSION}/server/jar`,
+    path.join(SERVER_HOME, SERVER_LAUNCHER))
+  for (const d of ['libraries', 'versions', 'server', 'remappedJars']) fs.mkdirSync(path.join(SERVER_HOME, d), { recursive: true })
+}
+
+/**
+ * Cliente de producción en runs/mod-tests-fabric/_client, como lo instalaría un launcher con el
+ * perfil de Fabric: el cliente vanilla, sus librerías y assets (de Mojang) y Fabric Loader con sus
+ * librerías (del perfil de meta.fabricmc.net). Es el mismo cliente que usan los jugadores
+ * (intermediary, mods tal cual se publican).
+ */
+async function installClient () {
+  const vanillaJson = path.join(CLIENT_HOME, 'versions', MC, `${MC}.json`)
+  if (!fs.existsSync(vanillaJson)) {
+    const res = await fetch('https://piston-meta.mojang.com/mc/game/version_manifest_v2.json')
+    if (!res.ok) throw new Error(`version manifest: HTTP ${res.status}`)
+    const entry = (await res.json()).versions.find((v) => v.id === MC)
+    await fetchFile(entry.url, vanillaJson, { sha1: entry.sha1 })
+  }
+  const vanilla = readJson(vanillaJson)
+  await fetchFile(vanilla.downloads.client.url, path.join(CLIENT_HOME, 'versions', MC, `${MC}.jar`), { sha1: vanilla.downloads.client.sha1 })
+  for (const lib of vanilla.libraries) {
+    const a = lib.downloads?.artifact
+    if (a && allowed(lib.rules)) await fetchFile(a.url, path.join(CLIENT_HOME, 'libraries', a.path), { sha1: a.sha1 })
+  }
+  const fabricJson = path.join(CLIENT_HOME, 'versions', FABRIC_PROFILE, `${FABRIC_PROFILE}.json`)
+  if (!fs.existsSync(fabricJson)) await fetchFile(`https://meta.fabricmc.net/v2/versions/loader/${MC}/${LOADER}/profile/json`, fabricJson)
+  for (const lib of readJson(fabricJson).libraries) {
+    await fetchFile(lib.url.replace(/\/?$/, '/') + mavenPath(lib.name), path.join(CLIENT_HOME, 'libraries', mavenPath(lib.name)), { sha1: lib.sha1 })
+  }
+  const index = path.join(CLIENT_HOME, 'assets/indexes', `${vanilla.assetIndex.id}.json`)
+  await fetchFile(vanilla.assetIndex.url, index, { sha1: vanilla.assetIndex.sha1 })
+  const objects = Object.values(readJson(index).objects)
+  const missing = objects.filter((o) => !fs.existsSync(path.join(CLIENT_HOME, 'assets/objects', o.hash.slice(0, 2), o.hash)))
+  if (missing.length) log(`  downloading ${missing.length} assets`)
+  for (let i = 0; i < missing.length; i += 16) {
+    await Promise.all(missing.slice(i, i + 16).map((o) => fetchFile(`https://resources.download.minecraft.net/${o.hash.slice(0, 2)}/${o.hash}`,
+      path.join(CLIENT_HOME, 'assets/objects', o.hash.slice(0, 2), o.hash), { sha1: o.hash })))
+  }
+  fs.mkdirSync(path.join(CLIENT_HOME, 'remappedJars'), { recursive: true })
+}
+
+/**
+ * Comando java del cliente de producción (ver installClient), como lo arma un launcher: el perfil
+ * de Fabric hereda del de vanilla; sus librerías van por delante y luego el jar del cliente.
+ */
+function clientCommand (gameDir) {
+  const vanilla = readJson(path.join(CLIENT_HOME, 'versions', MC, `${MC}.json`))
+  const fabric = readJson(path.join(CLIENT_HOME, 'versions', FABRIC_PROFILE, `${FABRIC_PROFILE}.json`))
+  const libraries = path.join(CLIENT_HOME, 'libraries')
+  const classpath = []
+  const seen = new Set()
+  const add = (name, file) => {
+    const [group, artifact, , classifier] = name.split(':')
+    const key = `${group}:${artifact}:${classifier || ''}`
+    if (seen.has(key)) return
+    seen.add(key)
+    classpath.push(file)
+  }
+  for (const lib of fabric.libraries) add(lib.name, path.join(libraries, mavenPath(lib.name)))
+  for (const lib of vanilla.libraries) {
+    const a = lib.downloads?.artifact
+    if (a && allowed(lib.rules)) add(lib.name, path.join(libraries, a.path))
+  }
+  classpath.push(path.join(CLIENT_HOME, 'versions', MC, `${MC}.jar`))
+  const natives = path.join(CLIENT_HOME, 'natives')
+  fs.mkdirSync(natives, { recursive: true })
+  const vars = {
+    library_directory: libraries,
+    classpath_separator: ':',
+    classpath: classpath.join(':'),
+    natives_directory: natives,
+    launcher_name: 'directauth-modtests',
+    launcher_version: '1',
+    version_name: FABRIC_PROFILE,
+    version_type: 'release',
+    game_directory: gameDir,
+    assets_root: path.join(CLIENT_HOME, 'assets'),
+    assets_index_name: vanilla.assetIndex.id,
+    auth_player_name: USERNAME,
+    auth_uuid: '00000000000000000000000000000000',
+    auth_access_token: '0',
+    clientid: '0',
+    auth_xuid: '0',
+    user_type: 'legacy'
+  }
+  const expand = (args = []) => args.flatMap((arg) => typeof arg === 'string' ? [arg] : allowed(arg.rules) ? [arg.value].flat() : [])
+    .map((arg) => arg.replace(/\$\{(\w+)\}/g, (m, name) => vars[name] ?? m))
+  return {
+    java: java21(),
+    jvm: [...expand(vanilla.arguments.jvm), ...expand(fabric.arguments?.jvm)],
+    main: [fabric.mainClass, ...expand(vanilla.arguments.game), ...expand(fabric.arguments?.game)]
+  }
+}
+
+/** Comando java del servidor de producción (el lanzador de Fabric), desde el directorio del escenario. */
+function serverCommand () {
+  return { java: java21(), jvm: [], main: ['-jar', path.join(SERVER_HOME, SERVER_LAUNCHER)] }
 }
 
 // ---------- Directorios de juego ----------
 
-function prepareDirs (scenario, mods) {
+function prepareDirs (scenario, mods, apiJar) {
   const dir = path.join(RUNS, scenario)
   const server = path.join(dir, 'server')
   const client = path.join(dir, 'client')
@@ -141,28 +375,41 @@ function prepareDirs (scenario, mods) {
     ...(MANIFEST.scenarios[scenario].serverProperties || {})
   }
   fs.writeFileSync(path.join(server, 'server.properties'), Object.entries(props).map(([k, v]) => `${k}=${v}`).join('\n') + '\n')
+  // Servidor de producción: el servidor vanilla (.fabric/server), sus librerías y las de Fabric
+  // Loader son los de la instalación compartida, y Minecraft remapeado a intermediary también, en el
+  // servidor y en el cliente (no se rehace cada vez)
+  for (const d of ['libraries', 'versions']) fs.symlinkSync(path.join(SERVER_HOME, d), path.join(server, d))
+  for (const [d, home, shared] of [[server, SERVER_HOME, ['server', 'remappedJars']], [client, CLIENT_HOME, ['remappedJars']]]) {
+    fs.mkdirSync(path.join(d, '.fabric'))
+    for (const s of shared) fs.symlinkSync(path.join(home, s), path.join(d, '.fabric', s))
+  }
   const jar = directAuthJar()
   fs.copyFileSync(jar, path.join(server, 'mods', path.basename(jar)))
+  for (const d of [server, client]) {
+    fs.copyFileSync(HARNESS_JAR, path.join(d, 'mods', path.basename(HARNESS_JAR)))
+    fs.copyFileSync(apiJar, path.join(d, 'mods', path.basename(apiJar)))
+  }
 
+  // Servidor y cliente de producción: las mods tal cual se publican
   for (const mod of mods) {
-    const src = path.join(CACHE, mod.file)
-    if (mod.side !== 'client') fs.copyFileSync(src, path.join(server, 'mods', mod.file))
-    if (mod.side !== 'server') {
-      fs.copyFileSync(src, path.join(client, 'mods', mod.file))
-      if (mod.clientPatch) patchJar(path.join(client, 'mods', mod.file), mod.clientPatch)
+    if (mod.side !== 'client') fs.copyFileSync(path.join(CACHE, mod.file), path.join(server, 'mods', mod.file))
+    if (mod.side !== 'server') fs.copyFileSync(path.join(CACHE, mod.file), path.join(client, 'mods', mod.file))
+  }
+  for (const [files, d] of [['serverFiles', server], ['clientFiles', client]]) {
+    for (const [rel, content] of Object.entries(MANIFEST.scenarios[scenario][files] || {})) {
+      fs.mkdirSync(path.dirname(path.join(d, rel)), { recursive: true })
+      fs.writeFileSync(path.join(d, rel), content)
     }
   }
-  for (const [rel, content] of Object.entries(MANIFEST.scenarios[scenario].serverFiles || {})) {
-    fs.mkdirSync(path.dirname(path.join(server, rel)), { recursive: true })
-    fs.writeFileSync(path.join(server, rel), content)
-  }
 
-  // Cliente: sin pausas al perder el foco, sin avisos de primera vez y con el mínimo de gráficos
+  // Cliente: sin pausas al perder el foco, sin avisos de primera vez y con el mínimo de gráficos.
+  // Sin el desenfoque del fondo de los menús: con OpenGL por software (Mesa) un fotograma de la
+  // pantalla Destiny de MCA tardaba a veces más de 20 s y el arnés daba el cliente por colgado
   fs.writeFileSync(path.join(client, 'options.txt'), [
     'pauseOnLostFocus:false', 'onboardAccessibility:false', 'skipMultiplayerWarning:true',
     'joinedFirstServer:true', 'tutorialStep:none', 'narrator:0', 'renderDistance:2',
     'simulationDistance:5', 'maxFps:30', 'graphicsMode:0', 'renderClouds:"false"',
-    'soundCategory_master:0.0', 'fullscreen:false', 'lang:en_us'
+    'soundCategory_master:0.0', 'fullscreen:false', 'lang:en_us', 'menuBackgroundBlurriness:0'
   ].join('\n') + '\n')
   return { dir, server, client }
 }
@@ -185,33 +432,6 @@ function applyEdit (serverDir, op) {
     fs.writeFileSync(file(op.write), op.content)
   } else {
     throw new Error(`firstBoot: unknown edit ${JSON.stringify(op)}`)
-  }
-}
-
-/**
- * Quita mixins de la configuración de un jar (o de un jar anidado: jar-in-jar). Para mods cuyo
- * mixin no aplica en el Minecraft recompilado del entorno de desarrollo (ver README).
- */
-function patchJar (jar, patch) {
-  const work = fs.mkdtempSync(path.join(require('os').tmpdir(), 'modtest-patch-'))
-  try {
-    let target = jar
-    if (patch.nested) {
-      execFileSync('unzip', ['-o', '-q', jar, patch.nested, '-d', work])
-      target = path.join(work, patch.nested)
-    }
-    const cfgDir = path.join(work, 'cfg')
-    execFileSync('unzip', ['-o', '-q', target, patch.mixinConfig, '-d', cfgDir])
-    const cfgFile = path.join(cfgDir, patch.mixinConfig)
-    const cfg = JSON.parse(fs.readFileSync(cfgFile, 'utf8'))
-    for (const section of ['mixins', 'client', 'server']) {
-      if (Array.isArray(cfg[section])) cfg[section] = cfg[section].filter((m) => !patch.removeMixins.includes(m))
-    }
-    fs.writeFileSync(cfgFile, JSON.stringify(cfg, null, 2))
-    execFileSync('zip', ['-q', path.resolve(target), patch.mixinConfig], { cwd: cfgDir })
-    if (patch.nested) execFileSync('zip', ['-q', path.resolve(jar), patch.nested], { cwd: work })
-  } finally {
-    fs.rmSync(work, { recursive: true, force: true })
   }
 }
 
@@ -279,6 +499,8 @@ function rconCommand (command) {
     let stage = 0
     socket.setTimeout(10000, () => { socket.destroy(); reject(new Error('rcon timeout')) })
     socket.on('error', reject)
+    // Un servidor que se cae o se detiene puede cerrar sin responder: sin esto la promesa no acabaría
+    socket.on('close', () => reject(new Error('rcon connection closed without a reply')))
     socket.on('connect', () => socket.write(packet(1, 3, RCON_PASSWORD)))
     socket.on('data', (chunk) => {
       data = Buffer.concat([data, chunk])
@@ -305,20 +527,21 @@ async function stopProcess (child, gracefully) {
 
 // ---------- Escenario ----------
 
-async function runScenario (scenario) {
+async function runScenario (scenario, apiJar) {
   const def = MANIFEST.scenarios[scenario]
   if (!def) throw new Error(`unknown scenario ${scenario}`)
   const mods = modsOf(scenario)
   for (const mod of mods) await download(mod)
-  const dirs = prepareDirs(scenario, mods)
+  const dirs = prepareDirs(scenario, mods, apiJar)
   const results = path.join(dirs.dir, 'results.jsonl')
   const serverLog = path.join(dirs.dir, 'server.log')
   const clientLog = path.join(dirs.dir, 'client.log')
+  const started = Date.now()
 
   log(`=== ${scenario}${mods.length ? ' (' + mods.map((m) => m.id).join(', ') + ')' : ''}`)
   const startServer = async (logFile) => {
-    const child = startProcess('server', launchCommand('runServer.sh'),
-      [`-Xmx${def.serverMemory || '2G'}`, '-Ddirectauth.modtests=server'], ['--nogui'], dirs.server, logFile)
+    const child = startProcess('server', serverCommand(),
+      [`-Xmx${def.serverMemory || '2G'}`], ['nogui'], dirs.server, logFile)
     if (!await waitForLog(logFile, /RCON running/, 600000, child)) {
       await stopProcess(child)
       throw new Error(`server did not start, see ${logFile}`)
@@ -332,18 +555,31 @@ async function runScenario (scenario) {
     await stopProcess(first, () => rconCommand('stop'))
     for (const op of def.firstBoot) applyEdit(dirs.server, op)
   }
+  // Configuración de DirectAuth para la pasada (ver README): LOG_JAIL_PAYLOADS=1 registra en
+  // server.log los payloads que recibe un jugador en la jaula (la pantalla de una mod nueva), y
+  // DIRECTAUTH_CONFIG='{...}' cambia campos (p. ej. quitar un id por defecto para ver si hace falta)
+  const config = {
+    ...(process.env.LOG_JAIL_PAYLOADS === '1' ? { logJailPayloads: true } : {}),
+    ...JSON.parse(process.env.DIRECTAUTH_CONFIG || '{}')
+  }
+  if (Object.keys(config).length) {
+    const file = path.join(dirs.server, 'world/serverconfig/DirectAuth-config.json')
+    fs.mkdirSync(path.dirname(file), { recursive: true })
+    // Con otherModsDefaultsVersion al día, DirectAuth no vuelve a añadir los ids por defecto quitados
+    fs.writeFileSync(file, JSON.stringify({ otherModsDefaultsVersion: 1000, ...config }, null, 2) + '\n')
+  }
   const server = await startServer(serverLog)
   let client = null
   try {
     for (const cmd of def.serverSetup || []) await rconCommand(cmd)
-    client = startProcess('client', launchCommand('runClient.sh'), [
+    client = startProcess('client', clientCommand(dirs.client), [
       `-Xmx${def.clientMemory || '2G'}`,
       ...(def.clientJvmArgs || []),
       `-Ddirectauth.modtest.scenario=${scenario}`,
       `-Ddirectauth.modtest.out=${results}`,
       `-Ddirectauth.modtest.server=127.0.0.1:${SERVER_PORT}`,
       `-Ddirectauth.modtest.rcon=${RCON_PORT}`
-    ], ['--username', USERNAME], dirs.client, clientLog,
+    ], [], dirs.client, clientLog,
     ['xvfb-run', '-a', '-s', '-screen 0 1280x720x24'])
     const code = await Promise.race([client.exited, sleep((def.timeoutMinutes || 15) * 60000).then(() => 'timeout')])
     if (code === 'timeout') log(`  client timed out, see ${clientLog}`)
@@ -351,7 +587,9 @@ async function runScenario (scenario) {
     if (client) await stopProcess(client)
     await stopProcess(server, () => rconCommand('stop'))
   }
-  return report(scenario, results, clientLog)
+  const ok = report(scenario, results, clientLog)
+  log(`  ${scenario}: ${Math.round((Date.now() - started) / 1000)} s`)
+  return ok
 }
 
 function report (scenario, results, clientLog) {
@@ -367,6 +605,7 @@ function report (scenario, results, clientLog) {
 ;(async () => {
   const args = process.argv.slice(2)
   const scenarios = args.length ? args : Object.keys(MANIFEST.scenarios)
+  for (const s of scenarios) if (!MANIFEST.scenarios[s]) throw new Error(`unknown scenario ${s}`)
   if (!eulaAccepted()) {
     log('Read the Minecraft EULA (https://aka.ms/MinecraftEULA) and accept it with:')
     log(`  mkdir -p '${RUNS}' && echo eula=true > '${path.join(RUNS, 'eula.txt')}'`)
@@ -374,13 +613,17 @@ function report (scenario, results, clientLog) {
   }
   // DIRECTAUTH_JAR=<jar> prueba ese jar (p. ej. una release) en vez de compilar este checkout
   log('Building DirectAuth and the harness')
-  if (!process.env.DIRECTAUTH_JAR) gradle(['jar'])
+  if (!process.env.DIRECTAUTH_JAR) gradle(['remapJar'])
   await fetchAll()
-  gradle(['classes', 'createClientLaunchScript', 'createServerLaunchScript'], HERE)
+  const apiJar = await fabricApi()
+  await installServer()
+  await installClient()
+  // Las mods de build/mod-cache se remapean para compilar el arnés: va después de fetchAll
+  gradle(['remapJar'], HERE)
   const failed = []
   for (const s of scenarios) {
     try {
-      if (!await runScenario(s)) failed.push(s)
+      if (!await runScenario(s, apiJar)) failed.push(s)
     } catch (e) {
       log(`FAIL  ${s}: ${e.message}`)
       failed.push(s)

@@ -7,10 +7,9 @@ import net.minecraft.client.gui.screens.ConnectScreen;
 import net.minecraft.client.multiplayer.ServerData;
 import net.minecraft.client.multiplayer.resolver.ServerAddress;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
-import net.neoforged.neoforge.client.event.ClientChatReceivedEvent;
-import net.neoforged.neoforge.client.event.ScreenEvent;
-import net.neoforged.neoforge.common.NeoForge;
-import net.neoforged.neoforge.network.PacketDistributor;
+import net.fabricmc.fabric.api.client.message.v1.ClientReceiveMessageEvents;
+import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
+import net.fabricmc.fabric.api.client.screen.v1.ScreenEvents;
 
 import java.io.IOException;
 import java.io.PrintWriter;
@@ -23,6 +22,7 @@ import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.BooleanSupplier;
 import java.util.function.Supplier;
@@ -51,11 +51,13 @@ public final class ClientDriver {
     }
 
     static void install() {
-        // Sin códigos de color: DirectAuth escribe sus mensajes con secuencias §
-        NeoForge.EVENT_BUS.addListener((ClientChatReceivedEvent event) -> chat.add(event.getMessage().getString().replaceAll("§.", "")));
+        // Sin códigos de color: DirectAuth escribe sus mensajes con secuencias §. Mensajes del
+        // sistema (los de DirectAuth, también los de la barra de acción) y de jugadores
+        ClientReceiveMessageEvents.GAME.register((message, overlay) -> chat.add(message.getString().replaceAll("§.", "")));
+        ClientReceiveMessageEvents.CHAT.register((message, signed, sender, params, timestamp) -> chat.add(message.getString().replaceAll("§.", "")));
         // El escenario empieza cuando el juego ha terminado de cargar (primera pantalla de título)
-        NeoForge.EVENT_BUS.addListener((ScreenEvent.Opening event) -> {
-            if (event.getNewScreen() instanceof TitleScreen && started.compareAndSet(false, true)) {
+        ScreenEvents.AFTER_INIT.register((client, screen, width, height) -> {
+            if (screen instanceof TitleScreen && started.compareAndSet(false, true)) {
                 Thread thread = new Thread(ClientDriver::runScenario, "mod-test scenario");
                 thread.setDaemon(true);
                 thread.start();
@@ -151,7 +153,18 @@ public final class ClientDriver {
 
     /** Ejecuta en el hilo del cliente y espera el resultado. */
     public <T> T onClient(Supplier<T> action) throws Exception {
-        return CompletableFuture.supplyAsync(action, mc).get(20, TimeUnit.SECONDS);
+        try {
+            return CompletableFuture.supplyAsync(action, mc).get(20, TimeUnit.SECONDS);
+        } catch (TimeoutException e) {
+            // El hilo del cliente no ha atendido la tarea: su pila dice en qué está atascado
+            StringBuilder stack = new StringBuilder("client thread busy for 20 s, at:");
+            Thread.getAllStackTraces().forEach((thread, frames) -> {
+                if (thread.getName().equals("Render thread")) {
+                    for (StackTraceElement frame : frames) stack.append("\n\tat ").append(frame);
+                }
+            });
+            throw new TimeoutException(stack.toString());
+        }
     }
 
     public void onClientRun(Runnable action) throws Exception {
@@ -208,7 +221,7 @@ public final class ClientDriver {
 
     /** Envía un paquete de otra mod como lo haría su cliente. */
     public void sendToServer(CustomPacketPayload payload) throws Exception {
-        onClientRun(() -> PacketDistributor.sendToServer(payload));
+        onClientRun(() -> ClientPlayNetworking.send(payload));
     }
 
     public void markChat() {
@@ -229,7 +242,17 @@ public final class ClientDriver {
     }
 
     public List<String> chatSinceMark() {
-        return List.copyOf(chat.subList(Math.min(chatMark, chat.size()), chat.size()));
+        return chatFrom(chatMark);
+    }
+
+    /** Posición actual del chat recibido, para {@link #chatFrom}. */
+    public int chatPosition() {
+        return chat.size();
+    }
+
+    /** Mensajes de chat recibidos desde una posición ({@link #chatPosition}). */
+    public List<String> chatFrom(int position) {
+        return List.copyOf(chat.subList(Math.min(position, chat.size()), chat.size()));
     }
 
     /** Clase de la pantalla abierta ("none" si no hay). */
