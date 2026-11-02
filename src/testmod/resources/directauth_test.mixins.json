@@ -1,0 +1,13 @@
+{
+  "required": true,
+  "minVersion": "0.8",
+  "package": "com.marcp.directauth.testmod.mixin",
+  "compatibilityLevel": "JAVA_21",
+  "mixins": [
+    "MixinChatListener",
+    "MixinPlayerListLast"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}

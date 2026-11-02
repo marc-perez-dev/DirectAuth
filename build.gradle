@@ -26,8 +26,15 @@ repositories {
 // Mojang ships Java 21 to end users in 1.21.1, so mods should target Java 21.
 java.toolchain.languageVersion = JavaLanguageVersion.of(21)
 
-// src/testmod (the smoke test's test mod) is still the NeoForge version from main and is not
-// compiled on this branch yet.
+// Test mod for tools/smoke-test (src/testmod, mod id directauth_test): stands in for other mods.
+// Built by testmodJar into build/testmod/, remapped to intermediary like the release jar; never
+// part of the DirectAuth jar.
+sourceSets {
+    testmod {
+        compileClasspath += main.compileClasspath
+        runtimeClasspath += main.runtimeClasspath
+    }
+}
 
 loom {
     // Classes the login mixin needs to see (ServerLoginPacketListenerImpl$State)
@@ -36,6 +43,9 @@ loom {
     mods {
         "${mod_id}" {
             sourceSet sourceSets.main
+        }
+        directauth_test {
+            sourceSet sourceSets.testmod
         }
     }
 
@@ -91,6 +101,25 @@ tasks.withType(JavaCompile).configureEach {
 
 java {
     withSourcesJar()
+}
+
+def testmodDevJar = tasks.register('testmodDevJar', Jar) {
+    from sourceSets.testmod.output
+    archiveBaseName = 'directauth_test'
+    archiveVersion = '1.0.0'
+    archiveClassifier = 'dev'
+    destinationDirectory = layout.buildDirectory.dir('testmod-dev')
+}
+
+// The test mod for the smoke test, remapped like the release jar: build/testmod/directauth_test-1.0.0.jar
+tasks.register('testmodJar', net.fabricmc.loom.task.RemapJarTask) {
+    dependsOn testmodDevJar
+    inputFile = testmodDevJar.flatMap { it.archiveFile }
+    archiveBaseName = 'directauth_test'
+    archiveVersion = '1.0.0'
+    archiveClassifier = ''
+    addNestedDependencies = false
+    destinationDirectory = layout.buildDirectory.dir('testmod')
 }
 
 jar {

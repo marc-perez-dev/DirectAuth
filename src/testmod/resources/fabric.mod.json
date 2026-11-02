@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "id": "directauth_test",
+  "version": "1.0.0",
+  "name": "DirectAuth smoke-test helpers",
+  "description": "Test-only helpers for tools/smoke-test: payloads both ways, server-opened menus, a chat listener, first-join teleports and /datest commands. Never part of the DirectAuth jar.",
+  "license": "MIT",
+  "environment": "server",
+  "entrypoints": {
+    "main": ["com.marcp.directauth.testmod.DirectAuthTest"]
+  },
+  "mixins": ["directauth_test.mixins.json"],
+  "depends": {
+    "fabricloader": ">=0.20.1",
+    "minecraft": "1.21.1",
+    "fabric-api": "*"
+  }
+}

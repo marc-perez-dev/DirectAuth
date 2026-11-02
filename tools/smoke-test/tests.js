@@ -605,7 +605,8 @@ const rconTest = async (cmd) => /Test passed/.test(await T.rcon(cmd))
     T.assert(!other.connected, 'another Mojang account stayed connected')
     // El kick llega en el mismo tick que la entrada y el bot a veces no llega a leer el motivo
     const reason = T.strip(L.msgPremiumError).split('\n')[0]
-    T.assert(T.serverLogSince(logAt).includes(`Notch lost connection: ${reason}`), `no "${reason}" kick in the server log`)
+    // Sin NeoForge, el log lleva los códigos de color del mensaje
+    T.assert(T.strip(T.serverLogSince(logAt)).includes(`Notch lost connection: ${reason}`), `no "${reason}" kick in the server log`)
   })
 
   await test('premium: admin disables online mode while offline; the account keeps its UUID', async () => {
@@ -743,6 +744,128 @@ const rconTest = async (cmd) => /Test passed/.test(await T.rcon(cmd))
     T.assert(await T.countItem(PICK, 'minecraft:emerald') === 3, 'control: could not pick up after login')
   })
 
+  await test('jail: damage (health and absorption), healing, XP pickup and attacks are blocked', async () => {
+    const NAME = process.env.HURT || 'Hurt'
+    const IP = '127.0.0.75'
+    let b = await register(NAME, IP)
+    // Con vida a medias al salir: en pacífico se regenera sola (heal), salvo en la jaula.
+    // Antes, esperar a que acabe la invulnerabilidad de los 3 s tras entrar
+    await T.sleep(2500)
+    await T.rcon(`damage ${NAME} 10`)
+    await T.sleep(200)
+    T.assert(Number((await T.rcon(`data get entity ${NAME} Health`)).match(/(-?[\d.]+)f?\s*$/)?.[1]) <= 11, 'control: damage did not apply before logging out')
+    await logout(b)
+    const health = async () => Number((await T.rcon(`data get entity ${NAME} Health`)).match(/(-?[\d.]+)f?\s*$/)?.[1])
+    const absorption = async () => Number((await T.rcon(`data get entity ${NAME} AbsorptionAmount`)).match(/(-?[\d.]+)f?\s*$/)?.[1])
+    const xp = async () => Number((await T.rcon(`xp query ${NAME} points`)).match(/(\d+) experience points/)?.[1])
+    const pigHealth = async () => Number((await T.rcon('data get entity @e[type=pig,tag=hurtTest,limit=1] Health')).match(/(-?[\d.]+)f?\s*$/)?.[1])
+
+    b = await joinOk(NAME, IP)
+    await T.expect(b, L.msgLoginRequest)
+    await T.sleep(500)
+    const h0 = await health()
+    T.assert(h0 > 0 && h0 <= 11, `unexpected health at join: ${h0}`)
+    // Curación: regeneración natural y un efecto de regeneración
+    await T.rcon(`effect give ${NAME} minecraft:regeneration 30 4`)
+    await T.sleep(2500)
+    T.assert(await health() === h0, `healed while jailed: ${h0} -> ${await health()}`)
+    // Daño con corazones de absorción: ni la vida ni la absorción bajan
+    await T.rcon(`effect give ${NAME} minecraft:absorption 60 1`)
+    await T.sleep(300)
+    const a0 = await absorption()
+    T.assert(a0 === 8, `absorption not applied: ${a0}`)
+    await T.rcon(`damage ${NAME} 6 minecraft:generic`)
+    await T.sleep(300)
+    T.assert(await health() === h0 && await absorption() === a0, `took damage while jailed: health ${await health()}, absorption ${await absorption()}`)
+    // Experiencia
+    const p = await T.posOf(NAME)
+    await T.rcon(`summon minecraft:experience_orb ${p[0]} ${p[1] + 0.3} ${p[2]} {Value:3}`)
+    await T.sleep(1500)
+    T.assert(await xp() === 0, `picked up XP while jailed: ${await xp()}`)
+    // Atacar a un cerdo a su lado
+    await T.rcon('kill @e[type=pig]')
+    await T.rcon(`summon minecraft:pig ${p[0] + 1.5} ${p[1]} ${p[2]} {NoAI:1b,Tags:["hurtTest"]}`)
+    await T.sleep(500)
+    const pig = Object.values(b.entities).find((e) => e.name === 'pig')
+    T.assert(pig, 'pig not visible')
+    b.attack(pig)
+    await T.sleep(500)
+    T.assert(await pigHealth() === 10, `attacked while jailed: pig health ${await pigHealth()}`)
+
+    // Controles positivos tras el login
+    T.send(b, `/login ${PW}`)
+    await T.expect(b, L.msgAuthenticated)
+    await T.sleep(1500)
+    T.assert(await health() > h0, `control: no healing after /login (${h0} -> ${await health()})`)
+    await T.rcon(`effect clear ${NAME} minecraft:regeneration`)
+    const a1 = await absorption()
+    await T.rcon(`damage ${NAME} 6 minecraft:generic`)
+    await T.sleep(300)
+    T.assert(await absorption() < a1, `control: absorption not spent after /login (${a1} -> ${await absorption()})`)
+    await T.sleep(600) // tiempo de invulnerabilidad del golpe anterior
+    const h1 = await health()
+    await T.rcon(`damage ${NAME} 4 minecraft:generic`)
+    await T.sleep(300)
+    T.assert(await health() < h1, `control: no damage after /login (${h1} -> ${await health()})`)
+    await T.rcon('kill @e[type=experience_orb]')
+    const p2 = await T.posOf(NAME)
+    await T.rcon(`summon minecraft:experience_orb ${p2[0]} ${p2[1] + 0.3} ${p2[2]} {Value:3}`)
+    await T.sleep(1500)
+    T.assert(await xp() > 0, 'control: no XP pickup after /login')
+    // /login lo devuelve a donde salió: el cerdo, a su lado
+    await T.rcon(`tp @e[type=pig,tag=hurtTest] ${p2[0] + 1.5} ${p2[1]} ${p2[2]}`)
+    await T.sleep(500)
+    const pig2 = Object.values(b.entities).find((e) => e.name === 'pig')
+    await b.lookAt(pig2.position.offset(0, 0.5, 0), true)
+    b.attack(pig2)
+    await T.sleep(500)
+    T.assert(await pigHealth() < 10, 'control: attack after /login did not hurt the pig')
+    await T.rcon('kill @e[type=pig]')
+  })
+
+  await test('vehicle on rejoin: the boat stays where it was and the jailed player is not riding it', async () => {
+    const NAME = process.env.RIDER || 'Rider'
+    let b = await register(NAME, '127.0.0.76')
+    await T.rcon('kill @e[type=boat]')
+    await T.rcon(`tp ${NAME} 40.5 -60 40.5`)
+    await T.sleep(500)
+    await T.rcon('summon minecraft:boat 40.5 -60 42.5 {Tags:["rideTest"]}')
+    await T.sleep(500)
+    const boat = Object.values(b.entities).find((e) => e.name === 'boat')
+    T.assert(boat, 'boat not visible')
+    b.mount(boat)
+    await T.sleep(800)
+    const riding = () => rconTest(`execute as ${NAME} if predicate {condition:"minecraft:entity_properties",entity:"this",predicate:{vehicle:{type:"minecraft:boat"}}}`)
+    T.assert(await riding(), 'control: could not mount the boat before logging out')
+    const boatPos = async () => {
+      const r = await T.rcon('data get entity @e[type=boat,tag=rideTest,limit=1] Pos')
+      const m = r.match(/\[(-?[\d.E-]+)d, (-?[\d.E-]+)d, (-?[\d.E-]+)d\]/)
+      return m ? m.slice(1).map(Number) : null
+    }
+    const before = await boatPos()
+    T.assert(before, 'boat not found before logging out')
+    await T.quit(b)
+    await T.waitGone(NAME)
+    // Vanilla quita el vehículo del mundo con el jugador y lo vuelve a poner al entrar
+    T.assert(!(await rconTest('execute if entity @e[type=boat,tag=rideTest]')), 'boat still in the world while its rider is offline')
+    // Desde otra IP (sin sesión de gracia): entra en la jaula
+    b = await joinOk(NAME, '127.0.0.77')
+    await T.expect(b, L.msgLoginRequest)
+    await T.sleep(1500)
+    const after = await boatPos()
+    T.assert(after, 'the boat was deleted when the jailed player rejoined')
+    T.assert(T.near(after, before, 1), `boat moved from ${before} to ${after}`)
+    T.assert(!(await riding()), 'the jailed player is riding the boat')
+    T.assert(T.near(await T.posOf(NAME), SPAWN, 1.6), `jailed rider not at spawn: ${await T.posOf(NAME)}`)
+    const count = await T.rcon('execute if entity @e[type=boat,tag=rideTest]')
+    T.assert(/count: 1\b/.test(count), `expected exactly one boat: ${count}`)
+    T.send(b, `/login ${PW}`)
+    await T.expect(b, L.msgAuthenticated)
+    await T.sleep(800)
+    T.assert(await boatPos(), 'boat gone after /login')
+    await T.rcon('kill @e[type=boat]')
+  })
+
   await test('changepassword keeps Online Mode columns', async () => {
     const b = await register('KeepOn', '127.0.0.71')
     T.db("UPDATE users SET isPremium = 1, onlineUUID = '00000000-0000-0000-0000-000000000001', offlineUUID = 'x' WHERE username = 'keepon'", [], { write: true })
@@ -856,6 +979,9 @@ const rconTest = async (cmd) => /Test passed/.test(await T.rcon(cmd))
   const HELLO = 'directauth_test:hello'
   const SCREEN = 'directauth_test:screen'
   const DATA = 'directauth_test:data'
+  const ARCH_CLAIM = 'directauth_test:arch_claim'
+  const ARCH_TEAM = 'directauth_test:arch_team'
+  const junk = (i) => `directauth_test:junk${i}`
   const sameSet = (a, b) => a.length === b.length && [...a].sort().join() === [...b].sort().join()
   // Nombres nuevos para repetir estas pruebas sobre el mismo mundo: FRESH=2 node tests.js ...
   // (el prefijo se mantiene porque el mod de pruebas decide por él qué simular)
@@ -872,6 +998,10 @@ const rconTest = async (cmd) => /Test passed/.test(await T.rcon(cmd))
     // (como el movimiento que Epic Fight envía en cada tick)
     T.sendPayload(b, HELLO, 'once')
     for (let i = 1; i <= 300; i++) T.sendPayload(b, ACTION, 'a' + i)
+    // Como Architectury en Fabric (FTB Quests, FTB Teams...): un tipo por mensaje, el último de cada uno
+    T.sendArchPayload(b, ARCH_CLAIM, 'c1')
+    T.sendArchPayload(b, ARCH_TEAM, 't1')
+    T.sendArchPayload(b, ARCH_CLAIM, 'c2')
     await T.sleep(1500)
     let log = await T.datestLog(NAME)
     T.assert(log.length === 0, `the server ran mod payloads of a jailed player: ${log.slice(0, 5)}… (${log.length})`)
@@ -879,7 +1009,7 @@ const rconTest = async (cmd) => /Test passed/.test(await T.rcon(cmd))
     await T.expect(b, L.msgAuthenticated)
     await T.sleep(800)
     log = await T.datestLog(NAME)
-    T.assert(sameSet(log, ['hello:once', 'action:a300']), `after /login expected the last of each type, got ${log.slice(0, 5)}… (${log.length})`)
+    T.assert(sameSet(log, ['hello:once', 'action:a300', 'arch:arch_team:t1', 'arch:arch_claim:c2']), `after /login expected the last of each type, got ${log.slice(0, 5)}… (${log.length})`)
     // Control positivo: autenticado, llegan al momento
     T.sendPayload(b, ACTION, 'live')
     await T.sleep(500)
@@ -1129,6 +1259,142 @@ const rconTest = async (cmd) => /Test passed/.test(await T.rcon(cmd))
     await T.expect(b, L.msgRegistered)
     await T.sleep(800)
     T.assert(b.windows.length === 1, `after /register expected the join menu to open once, got ${b.windows.length}`)
+  })
+
+  await test('held payloads: unknown ids are never held, the per-connection cap (64 types, 1 MiB) drops the excess, the server stays healthy', async () => {
+    const NAME = fresh('ModCap')
+    const IP = '127.0.0.117'
+    let b = await register(NAME, IP)
+    await logout(b)
+    const junkLog = async () => (await T.datestLog(NAME)).filter((e) => /^junk\d+$/.test(e))
+
+    // Ids que ninguna mod registró (DiscardedPayload): no se retienen, así que no ocupan el límite
+    await T.rcon('datest clear')
+    b = await joinOk(NAME, IP)
+    await T.expect(b, L.msgLoginRequest)
+    for (let i = 0; i < 100; i++) T.sendPayload(b, `directauth_test:unknown${i}`, 'x')
+    for (let i = 0; i < 10; i++) T.sendArchPayload(b, junk(i), 'x')
+    await T.sleep(1000)
+    T.assert((await junkLog()).length === 0, 'payloads of a jailed player ran')
+    T.send(b, `/login ${PW}`)
+    await T.expect(b, L.msgAuthenticated)
+    await T.sleep(800)
+    let got = await junkLog()
+    T.assert(got.length === 10, `unknown ids took room in the held payloads: after /login ${got.length}/10 known payloads ran (${got})`)
+    await logout(b)
+
+    // Más de 64 tipos: se procesan los 64 primeros, el resto se descarta (con un aviso en el log)
+    await T.rcon('datest clear')
+    const logAt = T.serverLogSize()
+    b = await joinOk(NAME, IP)
+    await T.expect(b, L.msgLoginRequest)
+    for (let i = 0; i < 70; i++) T.sendArchPayload(b, junk(i), 'x')
+    await T.sleep(1000)
+    T.send(b, `/login ${PW}`)
+    await T.expect(b, L.msgAuthenticated)
+    await T.sleep(800)
+    got = await junkLog()
+    T.assert(got.length === 64 && got.every((e, i) => e === `junk${i}`), `expected junk0..junk63 after /login, got ${got.length}: ${got.slice(60)}`)
+    T.assert(T.serverLogSince(logAt).includes(`Too many mod payloads from unauthenticated ${NAME}`), 'no warning about the dropped payloads')
+    await logout(b)
+
+    // Más de 1 MiB: 40 payloads de ~30 KB (el máximo de un paquete es 32 KB) no caben todos
+    await T.rcon('datest clear')
+    b = await joinOk(NAME, IP)
+    await T.expect(b, L.msgLoginRequest)
+    const big = Buffer.alloc(30000, 0x61)
+    for (let i = 0; i < 40; i++) T.sendArchPayload(b, junk(i), big)
+    await T.sleep(1500)
+    await T.expectConnected(b, 0)
+    T.send(b, `/login ${PW}`)
+    await T.expect(b, L.msgAuthenticated)
+    await T.sleep(800)
+    got = await junkLog()
+    T.assert(got.length >= 30 && got.length <= 34 && got.every((e, i) => e === `junk${i}`), `expected the first ~34 big payloads (1 MiB) after /login, got ${got.length}`)
+    // Control positivo: el servidor y la conexión siguen sanos, y lo nuevo llega al momento
+    T.sendArchPayload(b, junk(69), 'x')
+    await T.sleep(500)
+    T.assert((await junkLog()).includes('junk69'), 'control: payload after /login did not run')
+    await T.expectConnected(b, 0)
+  })
+
+  await test('held payloads run after /login before the deferred menu opens; Fabric extended menus wait too', async () => {
+    const NAME = fresh('MenuOrd')
+    const IP = '127.0.0.118'
+    let b = await register(NAME, IP)
+    await logout(b)
+    await T.rcon('datest clear')
+    b = await joinOk(NAME, IP)
+    await T.expect(b, L.msgLoginRequest)
+    await T.sleep(500)
+    T.sendPayload(b, ACTION, 'beforeMenu')
+    await T.sleep(300)
+    await T.rcon(`datest menu ${NAME} order`)
+    await T.sleep(800)
+    let log = await T.datestLog(NAME)
+    T.assert(!log.includes('action:beforeMenu') && !log.includes('createMenu:order') && b.windows.length === 0, `ran while jailed: ${log}`)
+    T.send(b, `/login ${PW}`)
+    await T.expect(b, L.msgAuthenticated)
+    await T.sleep(800)
+    log = await T.datestLog(NAME)
+    const ran = log.indexOf('action:beforeMenu')
+    const opened = log.indexOf('createMenu:order')
+    T.assert(ran >= 0 && opened >= 0 && ran < opened, `expected the held payload before the deferred menu, got ${log}`)
+    T.assert(b.windows.length === 1, `after /login expected the menu to open once, got ${b.windows.length}`)
+    await logout(b)
+
+    // Menú de Fabric API con datos extra (ExtendedScreenHandlerFactory): lo abre el payload
+    // fabric-screen-handler-api-v1:open_screen, que también espera al /login
+    await T.rcon('datest clear')
+    b = await joinOk(NAME, IP)
+    await T.expect(b, L.msgLoginRequest)
+    await T.sleep(500)
+    await T.rcon(`datest xmenu ${NAME} ext`)
+    await T.sleep(800)
+    for (let id = 1; id <= 3; id++) b._client.write('enchant_item', { windowId: id, enchantment: 2 })
+    await T.sleep(500)
+    log = await T.datestLog(NAME)
+    T.assert(b.extendedWindows.length === 0 && !log.some((e) => e.startsWith('button:') || e.startsWith('createMenu:')),
+      `extended menu opened for a jailed player (${JSON.stringify(b.extendedWindows)}, ${log})`)
+    T.send(b, `/login ${PW}`)
+    await T.expect(b, L.msgAuthenticated)
+    await T.sleep(800)
+    T.assert(b.extendedWindows.length === 1 && b.extendedWindows[0].type === 'directauth_test:extended',
+      `after /login expected the extended menu to open once, got ${JSON.stringify(b.extendedWindows)}`)
+    b._client.write('enchant_item', { windowId: b.extendedWindows[0].windowId, enchantment: 2 })
+    await T.sleep(500)
+    T.assert((await T.datestLog(NAME)).includes('button:ext:2'), 'control: button click after /login did not reach the extended menu')
+
+    // Menú extendido abierto por una mod al entrar
+    const NAME2 = fresh('XMenuLogin')
+    b = await joinOk(NAME2, '127.0.0.119')
+    await T.expect(b, L.msgWelcome)
+    await T.sleep(800)
+    T.assert(b.extendedWindows.length === 0, 'extended menu opened at join reached the jailed player')
+    await T.sleep(400)
+    T.send(b, `/register ${PW}`)
+    await T.expect(b, L.msgRegistered)
+    await T.sleep(800)
+    T.assert(b.extendedWindows.length === 1, `after /register expected the join menu to open once, got ${b.extendedWindows.length}`)
+  })
+
+  await test('channel registration (minecraft:register) works while jailed', async () => {
+    const NAME = fresh('ChanReg')
+    const IP = '127.0.0.120'
+    let b = await register(NAME, IP)
+    await logout(b)
+    b = await joinOk(NAME, IP)
+    await T.expect(b, L.msgLoginRequest)
+    await T.sleep(500)
+    // Sin declarar el canal, la mod no le envía nada (control de que la prueba mide algo)
+    T.assert(/not declared/.test(await T.rcon(`datest data ${NAME} before`)), 'channel already declared')
+    // (c:register, el del protocolo común, solo se negocia durante la configuración, antes de la
+    // jaula: lo usan todas las entradas con canales, ver join() en lib.js)
+    T.registerChannels(b, [DATA])
+    await T.sleep(500)
+    T.assert(/sent/.test(await T.rcon(`datest data ${NAME} jailed`)), 'minecraft:register sent while jailed was not processed')
+    await T.sleep(500)
+    T.assert(T.received(b, DATA).includes('jailed'), `payload not received: ${JSON.stringify(b.payloads)}`)
   })
 
   await test('first-join teleports of other mods are kept, whether they run before or after DirectAuth', async () => {

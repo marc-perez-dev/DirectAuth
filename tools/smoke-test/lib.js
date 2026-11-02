@@ -8,7 +8,7 @@ const { Rcon } = require('rcon-client')
 const { DatabaseSync } = require('node:sqlite')
 
 // Directorio de juego propio del smoke test (ver server.sh)
-const RUN = path.resolve(__dirname, '../../runs/smoke-test')
+const RUN = path.resolve(__dirname, '../../runs/smoke-test-fabric')
 const WORLD = path.join(RUN, 'world')
 const CFG_DIR = path.join(WORLD, 'serverconfig')
 const CFG = path.join(CFG_DIR, 'DirectAuth-config.json')
@@ -75,16 +75,35 @@ function join (username, ip = '127.0.0.1', { timeout = 20000, options = {}, chan
     bots.add(bot)
     bot.payloads = []
     bot.windows = []
+    bot.extendedWindows = []
     bot.playerInfo = []
-    // Canales de mods que el cliente dice soportar (minecraft:register), como haría un cliente
-    // con la mod: sin esto NeoForge no deja que el servidor le envíe esos paquetes
+    // Canales de juego de mods que el cliente dice soportar, como un cliente de Fabric con la mod:
+    // sin esto las mods (ServerPlayNetworking.canSend) no le envían esos paquetes. Fabric API solo
+    // acepta los canales de juego durante la configuración con el protocolo común entre loaders:
+    // el cliente declara c:version y c:register (minecraft:register), el servidor le envía su
+    // c:version y su c:register, y el cliente responde con la versión y sus canales de juego.
     if (channels.length) {
       bot._client.on('state', (state) => {
-        if (state === 'configuration') bot._client.write('custom_payload', { channel: 'minecraft:register', data: Buffer.from(channels.join('\0')) })
+        if (state === 'configuration') bot._client.write('custom_payload', { channel: 'minecraft:register', data: Buffer.from('c:version\0c:register') })
+      })
+      bot._client.on('custom_payload', (p) => {
+        if (bot._client.state !== 'configuration') return
+        if (p.channel === 'c:version') bot._client.write('custom_payload', { channel: 'c:version', data: Buffer.from([1, 1]) })
+        if (p.channel === 'c:register') {
+          bot._client.write('custom_payload', {
+            channel: 'c:register',
+            data: Buffer.concat([Buffer.from([1]), writeString('play'), Buffer.from([channels.length]), ...channels.map(writeString)])
+          })
+        }
       })
     }
     bot._client.on('custom_payload', (p) => {
       if (p.channel.startsWith('directauth_test:')) bot.payloads.push({ channel: p.channel, value: readString(p.data) })
+      // Menús con datos extra de Fabric API (ExtendedScreenHandlerFactory): id del tipo, syncId (byte), título...
+      if (p.channel === 'fabric-screen-handler-api-v1:open_screen') {
+        const typeLength = p.data[0] // ids cortos: longitud en un byte
+        bot.extendedWindows.push({ type: p.data.slice(1, 1 + typeLength).toString('utf8'), windowId: p.data[1 + typeLength] })
+      }
     })
     bot._client.on('open_window', (p) => bot.windows.push(p.windowId))
     bot._client.on('player_info', (p) => bot.playerInfo.push(p))
@@ -121,6 +140,26 @@ function readString (buf) {
 /** Envía al servidor un payload de mod (como lo haría el cliente de otra mod). */
 function sendPayload (bot, channel, value) {
   bot._client.write('custom_payload', { channel, data: writeString(value) })
+}
+/**
+ * Declara canales en mitad del juego con minecraft:register, como un cliente vanilla o uno que
+ * registra canales tarde (Fabric API lo admite también en juego).
+ */
+function registerChannels (bot, channels) {
+  bot._client.write('custom_payload', { channel: 'minecraft:register', data: Buffer.from(channels.join('\0')) })
+}
+/**
+ * Envía un mensaje como Architectury en Fabric 1.21.1: un tipo de payload por id de mensaje y el
+ * mensaje ya codificado dentro, como array de bytes (longitud VarInt).
+ */
+function sendArchPayload (bot, channel, value) {
+  const message = typeof value === 'string' ? writeString(value) : value
+  bot._client.write('custom_payload', { channel, data: Buffer.concat([varInt(message.length), message]) })
+}
+function varInt (n) {
+  const out = []
+  do { let b = n & 0x7f; n >>>= 7; if (n) b |= 0x80; out.push(b) } while (n)
+  return Buffer.from(out)
 }
 /** Valores recibidos por un canal de prueba (p. ej. 'directauth_test:screen'). */
 const received = (bot, channel) => bot.payloads.filter((p) => p.channel === channel).map((p) => p.value)
@@ -177,7 +216,7 @@ async function kickReasonInLog (bot) {
   const rx = new RegExp(`\\]: (?:${name}|[^\\n]*?name=${name},[^\\n]*?) lost connection: ([\\s\\S]*?)(?=\\n\\[|$)`, 'g')
   for (let i = 0; i < 20; i++) {
     // Si el servidor se reinició después de entrar el bot, el log empieza de nuevo
-    const found = [...serverLogSince(bot.logOffset > serverLogSize() ? 0 : bot.logOffset).matchAll(rx)].pop()
+    const found = [...strip(serverLogSince(bot.logOffset > serverLogSize() ? 0 : bot.logOffset)).matchAll(rx)].pop()
     if (found) return found[1].trim()
     await sleep(100)
   }
@@ -346,5 +385,5 @@ module.exports = {
   RUN, WORLD, CFG_DIR, sleep, strip, lang, re, join, send, expect, expectNo, expectKick, expectConnected,
   quit, quitAll, waitGone, rcon, closeRcon, db, user, readConfig, setConfig, offlineUUID, serverLogSince, serverLogSize,
   test, summary, assert, posOf, dimOf, countItem, near, verifiesLikeOldVersions, schemaVersion, dbBackups,
-  sendPayload, received, datestLog, premium, notPremium
+  sendPayload, received, datestLog, premium, notPremium, registerChannels, sendArchPayload
 }

@@ -56,7 +56,7 @@ async function register (name, ip) {
       const bad = log.split('\n').filter((l) => /Exception|\/ERROR|Caused by/.test(l) && !/DEBUG/.test(l))
       T.assert(bad.length === 0, 'errors during shutdown:\n' + bad.slice(0, 15).join('\n'))
       const start = log.match(/\[(\d\d:\d\d:\d\d)\].*Stopping the server/)
-      const end = log.match(/\[(\d\d:\d\d:\d\d)\][^\n]*Unloading configs type SERVER/)
+      const end = log.match(/\[(\d\d:\d\d:\d\d)\][^\n]*All dimensions are saved/)
       console.log('      shutdown:', start && start[1], '->', end && end[1])
       const p = await joinOk('Persist', '127.0.0.90')
       await T.expect(p, L.msgLoginRequest)
