@@ -6,6 +6,7 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.network.protocol.game.ClientboundRemoveMobEffectPacket;
 import net.minecraft.network.protocol.game.ClientboundUpdateMobEffectPacket;
 import net.minecraft.resources.ResourceKey;
+import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.level.Level;
@@ -25,7 +26,10 @@ import net.neoforged.neoforge.event.entity.player.PlayerInteractEvent;
 import net.neoforged.neoforge.event.entity.player.PlayerXpEvent;
 import net.neoforged.neoforge.event.level.BlockEvent;
 import net.neoforged.neoforge.event.tick.EntityTickEvent;
+import net.neoforged.neoforge.event.tick.ServerTickEvent;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -137,6 +141,40 @@ public class PlayerRestrictionHandler {
         }
     }
 
+    /**
+     * Los jugadores en la jaula que no reciben EntityTickEvent: los pasajeros (el nivel los tickea
+     * con rideTick).
+     */
+    @SubscribeEvent
+    public void onServerTick(ServerTickEvent.Post event) {
+        MinecraftServer server = event.getServer();
+        // Solo se copian ellos, normalmente ninguno
+        List<ServerPlayer> jailed = null;
+        for (ServerPlayer player : server.getPlayerList().getPlayers()) {
+            if (player.isPassenger() && isNotAuth(player)) {
+                if (jailed == null) jailed = new ArrayList<>();
+                jailed.add(player);
+            }
+        }
+        if (jailed == null) return;
+        for (ServerPlayer player : jailed) {
+            if (player.hasDisconnected()) continue;
+            // Volvió a montar en su vehículo al entrar (ver onMount) y no se le ha teleportado
+            // al spawn: se baja, y el vehículo se queda donde estaba
+            player.stopRiding();
+        }
+    }
+
+    /**
+     * Jugador al que PlayerList.placeNewPlayer está colocando (MixinPlayerList), solo en el hilo
+     * del servidor. Mientras tanto puede volver a montar en su vehículo (ver onMount).
+     */
+    private static ServerPlayer beingPlaced;
+
+    public static void setBeingPlaced(ServerPlayer player) {
+        beingPlaced = player;
+    }
+
     // --- (El resto de eventos se mantienen igual que en tu código original) ---
     
     @SubscribeEvent
@@ -165,9 +203,17 @@ public class PlayerRestrictionHandler {
         // INTERACT_AT: lo usan p. ej. los armor stands para cambiar equipo
         if (isNotAuth(event.getEntity())) event.setCanceled(true);
     }
+    /**
+     * EntityMountEvent se dispara también con force. Excepto mientras PlayerList.placeNewPlayer lo
+     * coloca (MixinPlayerList): ahí vuelve a montar con force el vehículo en el que se desconectó,
+     * y si se le impidiera, vanilla eliminaría el vehículo y sus pasajeros ("Couldn't reattach
+     * entity to player"). Después, la jaula lo desmonta (el teleport al spawn de ConnectionHandler
+     * o onServerTick) y el vehículo se queda donde estaba.
+     */
     @SubscribeEvent
     public void onMount(EntityMountEvent event) {
-        if (event.isMounting() && isNotAuth(event.getEntityMounting())) event.setCanceled(true);
+        if (event.isMounting() && isNotAuth(event.getEntityMounting())
+                && event.getEntityMounting() != beingPlaced) event.setCanceled(true);
     }
     @SubscribeEvent
     public void onItemPickup(ItemEntityPickupEvent.Pre event) {

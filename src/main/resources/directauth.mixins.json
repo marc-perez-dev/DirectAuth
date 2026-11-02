@@ -13,6 +13,7 @@
     "MixinServerCommonPacketListenerImpl",
     "MixinConnection",
     "MixinServerPlayerOpenMenu",
+    "MixinPlayerList",
     "ServerGamePacketListenerAccessor"
   ],
   "injectors": {
